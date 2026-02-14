@@ -13,15 +13,23 @@ declare module "http" {
   }
 }
 
-app.use(
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api")) {
+    return next();
+  }
   express.json({
     verify: (req, _res, buf) => {
-      req.rawBody = buf;
+      (req as any).rawBody = buf;
     },
-  }),
-);
+  })(req, res, next);
+});
 
-app.use(express.urlencoded({ extended: false }));
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api")) {
+    return next();
+  }
+  express.urlencoded({ extended: false })(req, res, next);
+});
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

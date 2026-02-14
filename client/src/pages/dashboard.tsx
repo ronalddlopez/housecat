@@ -227,12 +227,16 @@ function RunTestSection() {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/tests/manual/run", { url, goal });
+      const res = await fetch("/api/tests/manual/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, goal }),
+      });
+      const data = await res.json();
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || `HTTP ${res.status}`);
+        throw new Error(data.error || `HTTP ${res.status}`);
       }
-      return res.json();
+      return data;
     },
   });
 
