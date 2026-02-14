@@ -1,12 +1,11 @@
 import os
 import json
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from upstash_redis import Redis
 from qstash import QStash
-import httpx
 
 app = FastAPI(title="HouseCat", version="0.1.0")
 
@@ -84,8 +83,30 @@ async def qstash_callback(test_id: str):
 
 
 @app.post("/api/tests/{test_id}/run")
-async def run_test_manual(test_id: str):
-    return {"status": "triggered", "testId": test_id}
+async def run_test_manual(test_id: str, request: Request):
+    from backend.agents.pipeline import run_test
+
+    try:
+        body = await request.json()
+    except Exception:
+        return {"error": "Invalid JSON body"}, 400
+
+    url = body.get("url")
+    goal = body.get("goal")
+
+    if not url or not goal:
+        return {"error": "Both 'url' and 'goal' are required"}
+
+    try:
+        plan, browser_result, final_result = await run_test(url, goal)
+
+        return {
+            "plan": plan.model_dump(),
+            "browser_result": browser_result.model_dump(),
+            "result": final_result.model_dump(),
+        }
+    except Exception as e:
+        return {"error": f"Pipeline failed: {str(e)[:300]}"}
 
 
 @app.post("/api/test/tinyfish")
@@ -95,47 +116,25 @@ async def test_tinyfish():
         return {"success": False, "error": "TINYFISH_API_KEY not set"}
 
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
-            async with client.stream(
-                "POST",
-                "https://agent.tinyfish.ai/v1/automation/run-sse",
-                headers={
-                    "X-API-Key": tinyfish_key,
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "url": "https://example.com",
-                    "goal": 'What is the main heading on this page? Return JSON: {"heading": "..."}. Return valid JSON only.',
-                },
-            ) as response:
-                result = None
-                streaming_url = None
-
-                async for line in response.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    try:
-                        data = json.loads(line[6:])
-                        if data.get("type") == "STREAMING_URL":
-                            streaming_url = data.get("streamingUrl")
-                        elif data.get("type") == "COMPLETE":
-                            result = data.get("resultJson")
-                        elif data.get("type") == "ERROR":
-                            return {"success": False, "error": data.get("message")}
-                    except json.JSONDecodeError:
-                        pass
-
-                return {
-                    "success": True,
-                    "result": result,
-                    "streamingUrl": streaming_url,
-                }
+        from backend.services.tinyfish import call_tinyfish
+        result = await call_tinyfish(
+            "https://example.com",
+            'What is the main heading on this page? Return JSON: {"heading": "..."}. Return valid JSON only.',
+        )
+        return {
+            "success": result["success"],
+            "result": result["raw"],
+            "streamingUrl": result["streaming_url"],
+            "error": result.get("error"),
+        }
     except Exception as e:
         return {"success": False, "error": str(e)[:200]}
 
 
 @app.post("/api/test/agent")
 async def test_agent():
+    import httpx
+
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
     if not anthropic_key:
         return {"success": False, "error": "ANTHROPIC_API_KEY not set"}
@@ -191,7 +190,6 @@ async def test_qstash():
         return {"success": False, "error": str(e)[:200]}
 
 
-# In production, serve the built React app
 dist_path = os.path.join(os.path.dirname(__file__), "..", "dist", "public")
 if os.path.exists(dist_path):
     app.mount("/assets", StaticFiles(directory=os.path.join(dist_path, "assets")), name="assets")
