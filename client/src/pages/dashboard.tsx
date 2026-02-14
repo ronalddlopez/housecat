@@ -319,7 +319,7 @@ function RunTestSection() {
             <div className="space-y-4" data-testid="section-test-results">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2">
-                  {result.result?.verdict === "PASSED" ? (
+                  {result.result?.passed ? (
                     <CheckCircle2 className="h-5 w-5 text-emerald-500" />
                   ) : (
                     <XCircle className="h-5 w-5 text-red-500" />
@@ -327,13 +327,13 @@ function RunTestSection() {
                   <Badge
                     variant="default"
                     className={`${
-                      result.result?.verdict === "PASSED"
+                      result.result?.passed
                         ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
                         : "bg-red-500/15 text-red-700 dark:text-red-400"
                     } no-default-hover-elevate no-default-active-elevate`}
                     data-testid="badge-test-verdict"
                   >
-                    {result.result?.verdict || "UNKNOWN"}
+                    {result.result?.passed ? "PASSED" : "FAILED"}
                   </Badge>
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
