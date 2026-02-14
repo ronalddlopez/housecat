@@ -3,7 +3,7 @@ import json
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from upstash_redis import Redis
 from qstash import QStash
 
@@ -89,13 +89,13 @@ async def run_test_manual(test_id: str, request: Request):
     try:
         body = await request.json()
     except Exception:
-        return {"error": "Invalid JSON body"}, 400
+        return JSONResponse(content={"error": "Invalid JSON body"}, status_code=400)
 
     url = body.get("url")
     goal = body.get("goal")
 
     if not url or not goal:
-        return {"error": "Both 'url' and 'goal' are required"}
+        return JSONResponse(content={"error": "Both 'url' and 'goal' are required"}, status_code=400)
 
     try:
         plan, browser_result, final_result = await run_test(url, goal)
@@ -106,7 +106,7 @@ async def run_test_manual(test_id: str, request: Request):
             "result": final_result.model_dump(),
         }
     except Exception as e:
-        return {"error": f"Pipeline failed: {str(e)[:300]}"}
+        return JSONResponse(content={"error": f"Pipeline failed: {str(e)[:300]}"}, status_code=500)
 
 
 @app.post("/api/test/tinyfish")

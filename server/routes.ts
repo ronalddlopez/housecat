@@ -12,6 +12,8 @@ export async function registerRoutes(
       target: "http://127.0.0.1:8000",
       changeOrigin: true,
       pathRewrite: undefined,
+      timeout: 120000,
+      proxyTimeout: 120000,
       on: {
         proxyReq: (proxyReq, req) => {
           proxyReq.path = req.originalUrl;
