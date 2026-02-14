@@ -68,8 +68,17 @@ app.use((req, res, next) => {
   next();
 });
 
+function getPythonCommand(): [string, string[]] {
+  const isWindows = process.platform === "win32";
+  if (isWindows) {
+    return ["py", ["-3.12", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]];
+  }
+  return ["python3", ["-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]];
+}
+
 function startFastAPI() {
-  const fastapi = spawn("python3", ["-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"], {
+  const [cmd, args] = getPythonCommand();
+  const fastapi = spawn(cmd, args, {
     stdio: "inherit",
     env: { ...process.env },
   });
