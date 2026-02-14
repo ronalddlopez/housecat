@@ -1,38 +1,33 @@
-import { type User, type InsertUser } from "@shared/schema";
-import { randomUUID } from "crypto";
-
-// modify the interface with any CRUD methods
-// you might need
+import { Redis } from "@upstash/redis";
+import { Client as QStashClient } from "@upstash/qstash";
 
 export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  getRedis(): Redis;
+  getQStash(): QStashClient;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
+export class AppStorage implements IStorage {
+  private redis: Redis | null = null;
+  private qstash: QStashClient | null = null;
 
-  constructor() {
-    this.users = new Map();
+  getRedis(): Redis {
+    if (!this.redis) {
+      this.redis = new Redis({
+        url: process.env.UPSTASH_REDIS_REST_URL!,
+        token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+      });
+    }
+    return this.redis;
   }
 
-  async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
-  }
-
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
-  }
-
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+  getQStash(): QStashClient {
+    if (!this.qstash) {
+      this.qstash = new QStashClient({
+        token: process.env.QSTASH_TOKEN!,
+      });
+    }
+    return this.qstash;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new AppStorage();
