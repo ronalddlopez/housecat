@@ -1,0 +1,415 @@
+# Phase 0: Project Scaffold + Deploy — Detailed Plan
+
+**Goal:** Fresh project running on Replit with a public URL. All external services connected and verified.
+**Target Time:** 1 hour
+**Where:** Replit
+
+---
+
+## Step 1: Create Replit Project (10 min)
+
+### 1.1 Create a new Replit
+- Go to replit.com → Create Repl
+- Template: **Python** (we'll add React later)
+- Name: `housecat`
+- Visibility: **Public** (required for hackathon open source)
+
+### 1.2 Project structure
+Create this folder structure in Replit:
+
+```
+housecat/
+├── backend/
+│   ├── main.py              ← FastAPI entry point
+│   ├── requirements.txt     ← Python dependencies
+│   └── .env                 ← Environment variables (Replit Secrets)
+├── .replit                   ← Replit run config
+└── README.md
+```
+
+### 1.3 Configure `.replit` run command
+
+```toml
+run = "cd backend && pip install -r requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8000"
+
+[deployment]
+run = ["sh", "-c", "cd backend && pip install -r requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8000"]
+```
+
+### 1.4 `backend/requirements.txt`
+
+```
+fastapi==0.115.0
+uvicorn==0.30.6
+upstash-redis==1.6.0
+qstash==3.2.0
+pydantic-ai-slim[anthropic]
+httpx==0.27.2
+python-dotenv==1.0.1
+```
+
+---
+
+## Step 2: Environment Variables (5 min)
+
+### 2.1 Set up Replit Secrets (or `.env`)
+
+Use Replit's Secrets tab (padlock icon) to add these. They'll be available as environment variables:
+
+```bash
+# Upstash Redis
+UPSTASH_REDIS_REST_URL=https://xxx.upstash.io
+UPSTASH_REDIS_REST_TOKEN=AXxx...
+
+# QStash
+QSTASH_TOKEN=QSxx...
+
+# TinyFish
+TINYFISH_API_KEY=sk-mino-xxxxx
+
+# Anthropic (Claude)
+ANTHROPIC_API_KEY=sk-ant-xxxxx
+
+# App (fill in after first run — Replit gives you the URL)
+PUBLIC_URL=https://housecat.yourusername.repl.co
+```
+
+### 2.2 Get the service credentials
+
+| Service | Where to get it | Free tier? |
+|---------|----------------|------------|
+| **Upstash Redis** | [console.upstash.com](https://console.upstash.com) → Create Database → REST API tab | Yes — 256MB, 500K commands/month |
+| **QStash** | [console.upstash.com](https://console.upstash.com) → QStash tab → Token | Yes — 500 messages/day |
+| **TinyFish** | [tinyfish.ai](https://tinyfish.ai) → Sign up → API Keys | Yes — free tier available |
+| **Anthropic** | [console.anthropic.com](https://console.anthropic.com) → API Keys | Requires credits |
+
+---
+
+## Step 3: FastAPI Skeleton + Health Check (15 min)
+
+### 3.1 `backend/main.py`
+
+```python
+import os
+import json
+from contextlib import asynccontextmanager
+
+from dotenv import load_dotenv
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from upstash_redis import Redis
+from qstash import QStash
+import httpx
+
+load_dotenv()
+
+# --- Clients ---
+
+redis = Redis(
+    url=os.environ["UPSTASH_REDIS_REST_URL"],
+    token=os.environ["UPSTASH_REDIS_REST_TOKEN"],
+)
+
+qstash_client = QStash(token=os.environ["QSTASH_TOKEN"])
+
+TINYFISH_API_KEY = os.environ["TINYFISH_API_KEY"]
+ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+PUBLIC_URL = os.environ.get("PUBLIC_URL", "http://localhost:8000")
+
+
+# --- App ---
+
+app = FastAPI(title="HouseCat", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # tighten later
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# --- Health Check ---
+
+@app.get("/")
+async def health():
+    """Health check — verify all external services are reachable."""
+    status = {}
+
+    # Redis
+    try:
+        redis.set("health:ping", "pong")
+        val = redis.get("health:ping")
+        status["redis"] = "connected" if val == "pong" else "error"
+    except Exception as e:
+        status["redis"] = f"error: {str(e)[:100]}"
+
+    # QStash (just verify token works by listing schedules)
+    try:
+        schedules = qstash_client.schedule.list()
+        status["qstash"] = "connected"
+    except Exception as e:
+        status["qstash"] = f"error: {str(e)[:100]}"
+
+    # TinyFish (just verify API key format — don't make a real call)
+    status["tinyfish"] = "key_set" if TINYFISH_API_KEY.startswith("sk-mino-") else "missing"
+
+    # Anthropic (just verify key is set — Pydantic AI will use it)
+    status["anthropic"] = "key_set" if ANTHROPIC_API_KEY.startswith("sk-ant-") else "missing"
+
+    # Public URL
+    status["public_url"] = PUBLIC_URL
+
+    all_ok = all(
+        v in ("connected", "key_set") or v.startswith("https://")
+        for v in status.values()
+    )
+    status["status"] = "all_green" if all_ok else "issues_detected"
+
+    return status
+
+
+# --- Placeholder: QStash callback (Phase 3) ---
+
+@app.post("/api/callback/{test_id}")
+async def qstash_callback(test_id: str):
+    """QStash calls this on schedule to trigger a test run."""
+    # TODO: Phase 3 — load test from Redis, run multi-agent pipeline
+    return {"status": "received", "test_id": test_id}
+
+
+# --- Placeholder: Manual test trigger (Phase 3) ---
+
+@app.post("/api/tests/{test_id}/run")
+async def run_test_manual(test_id: str):
+    """Manually trigger a test run (bypasses QStash)."""
+    # TODO: Phase 3
+    return {"status": "triggered", "test_id": test_id}
+```
+
+### 3.2 Run it
+
+Hit the **Run** button in Replit. You should see:
+```
+INFO:     Uvicorn running on http://0.0.0.0:8000
+```
+
+Replit will give you a public URL like `https://housecat.yourusername.repl.co`.
+
+### 3.3 Test the health check
+
+Open the public URL in your browser. You should see:
+```json
+{
+  "redis": "connected",
+  "qstash": "connected",
+  "tinyfish": "key_set",
+  "anthropic": "key_set",
+  "public_url": "https://housecat.yourusername.repl.co",
+  "status": "all_green"
+}
+```
+
+**If any service shows an error, fix the env var before moving on.**
+
+---
+
+## Step 4: Verify QStash Can Reach You (10 min)
+
+### 4.1 Update `PUBLIC_URL`
+
+Now that you have your Replit URL, update the `PUBLIC_URL` environment variable in Replit Secrets:
+
+```
+PUBLIC_URL=https://housecat.yourusername.repl.co
+```
+
+**No trailing slash.**
+
+### 4.2 Test QStash → your server
+
+Send a one-shot message from QStash to your callback endpoint:
+
+```python
+# Run this in Replit's shell (or add a temporary test endpoint):
+from qstash import QStash
+import os
+
+client = QStash(token=os.environ["QSTASH_TOKEN"])
+msg_id = client.message.publish_json(
+    url=f"{os.environ['PUBLIC_URL']}/api/callback/test123",
+    body={"test": True},
+)
+print(f"Message sent: {msg_id}")
+```
+
+Check your Replit logs — you should see the callback endpoint hit with `test_id=test123`.
+
+### 4.3 Verify in Upstash console
+
+Go to [console.upstash.com](https://console.upstash.com) → QStash → Events tab. You should see the message delivered with a `200` response.
+
+**If QStash can't reach you:** Make sure the Replit app is running (not sleeping). You may need Replit's "Always On" or Deployments feature.
+
+---
+
+## Step 5: Quick TinyFish Sanity Check (10 min)
+
+### 5.1 Make a real TinyFish call
+
+Add a temporary test endpoint (or run in Replit shell):
+
+```python
+@app.get("/test/tinyfish")
+async def test_tinyfish():
+    """Quick sanity check that TinyFish API works."""
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
+        async with client.stream(
+            "POST",
+            "https://agent.tinyfish.ai/v1/automation/run-sse",
+            headers={
+                "X-API-Key": TINYFISH_API_KEY,
+                "Content-Type": "application/json",
+            },
+            json={
+                "url": "https://example.com",
+                "goal": "What is the main heading on this page? Return JSON: {\"heading\": \"...\"}. Return valid JSON only.",
+            },
+        ) as response:
+            result = None
+            streaming_url = None
+
+            async for line in response.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                import json as _json
+                data = _json.loads(line[6:])
+
+                if data.get("type") == "STREAMING_URL":
+                    streaming_url = data.get("streamingUrl")
+                elif data.get("type") == "COMPLETE":
+                    result = data.get("resultJson")
+                elif data.get("type") == "ERROR":
+                    return {"success": False, "error": data.get("message")}
+
+            return {
+                "success": True,
+                "result": result,
+                "streaming_url": streaming_url,
+            }
+```
+
+### 5.2 Hit the endpoint
+
+Open `https://your-replit-url/test/tinyfish` in your browser. Wait 10-30 seconds. You should see:
+
+```json
+{
+  "success": true,
+  "result": {"heading": "Example Domain"},
+  "streaming_url": "https://stream.tinyfish.ai/session/..."
+}
+```
+
+**If this works, TinyFish is good to go.** Delete the test endpoint after.
+
+---
+
+## Step 6: Quick Pydantic AI Sanity Check (5 min)
+
+### 5.1 Test that Pydantic AI + Claude works
+
+Add a temporary test endpoint:
+
+```python
+@app.get("/test/agent")
+async def test_agent():
+    """Quick sanity check that Pydantic AI + Anthropic works."""
+    from pydantic_ai import Agent
+    from pydantic import BaseModel
+
+    class SimpleResult(BaseModel):
+        answer: str
+
+    agent = Agent(
+        'anthropic:claude-haiku-4-5-20251001',
+        output_type=SimpleResult,
+        instructions="You answer questions concisely.",
+    )
+
+    result = await agent.run("What is 2 + 2?")
+    return {"output": result.output.model_dump()}
+```
+
+### 6.2 Hit the endpoint
+
+Open `https://your-replit-url/test/agent`. You should see:
+
+```json
+{
+  "output": {"answer": "4"}
+}
+```
+
+**If this works, Pydantic AI + Claude is good to go.** Delete the test endpoint after.
+
+---
+
+## Step 7: Initialize Git Repo (5 min)
+
+### 7.1 Set up git in Replit shell
+
+```bash
+git init
+git add .
+git commit -m "Phase 0: Project scaffold with FastAPI + service connections"
+```
+
+### 7.2 Create GitHub repo
+
+```bash
+# If you have gh CLI available:
+gh repo create housecat --public --source=. --push
+
+# Or create on github.com and add remote:
+git remote add origin https://github.com/yourusername/housecat.git
+git push -u origin main
+```
+
+**Open source required for the hackathon — repo must be public.**
+
+---
+
+## Phase 0 Checklist
+
+Before moving to Phase 1, confirm all boxes:
+
+- [ ] Replit project running with public URL
+- [ ] `GET /` returns all-green health check
+- [ ] Redis: can set/get values
+- [ ] QStash: can send a message that hits your callback endpoint
+- [ ] TinyFish: can make a real browser automation call
+- [ ] Pydantic AI: can run a simple agent with Claude Haiku
+- [ ] Environment variables all configured
+- [ ] Git repo initialized and pushed to GitHub (public)
+- [ ] `PUBLIC_URL` env var set to your Replit URL (no trailing slash)
+
+---
+
+## Files Created in Phase 0
+
+```
+housecat/
+├── backend/
+│   ├── main.py              ← FastAPI app with health check + placeholder endpoints
+│   └── requirements.txt     ← All Python dependencies
+├── .replit                   ← Run configuration
+└── README.md                ← Basic project description
+```
+
+---
+
+## Next: Phase 1 — Multi-Agent Engine
+
+Once all checks pass, move directly to Phase 1. The agent engine is the core of the product and the riskiest piece. Everything else is CRUD on top of it.
