@@ -1,0 +1,7 @@
+anthropic>=0.79.0
+fastapi>=0.129.0
+httpx>=0.28.1
+pydantic-ai-slim[anthropic]>=1.59.0
+qstash>=3.2.0
+upstash-redis>=1.6.0
+uvicorn>=0.40.0

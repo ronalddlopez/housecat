@@ -1,6 +1,39 @@
-node_modules
-dist
-.DS_Store
-server/public
+# Dependencies
+node_modules/
+venv/
+__pycache__/
+*.pyc
+
+backend/venv
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+server/public/
 vite.config.ts.*
 *.tar.gz
+
+# Python
+*.egg-info/
+*.egg
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# uv / pip
+uv.lock

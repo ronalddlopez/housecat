@@ -69,7 +69,7 @@ app.use((req, res, next) => {
 });
 
 function startFastAPI() {
-  const fastapi = spawn("uvicorn", ["backend.main:app", "--host", "0.0.0.0", "--port", "8000"], {
+  const fastapi = spawn("py", ["-3.12", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"], {
     stdio: "inherit",
     env: { ...process.env },
   });
@@ -122,7 +122,7 @@ function startFastAPI() {
     {
       port,
       host: "0.0.0.0",
-      reusePort: true,
+      reusePort: false,
     },
     () => {
       log(`serving on port ${port}`);
