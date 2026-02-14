@@ -1,17 +1,16 @@
 import os
 import json
-from pathlib import Path
-from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from upstash_redis import Redis
 from qstash import QStash
 
+from backend.api.tests import router as tests_router
+
 app = FastAPI(title="HouseCat", version="0.1.0")
+app.include_router(tests_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -86,8 +85,8 @@ async def qstash_callback(test_id: str):
     return {"status": "received", "testId": test_id}
 
 
-@app.post("/api/tests/{test_id}/run")
-async def run_test_manual(test_id: str, request: Request):
+@app.post("/api/run-test")
+async def run_test_manual(request: Request):
     from backend.agents.pipeline import run_test
 
     try:

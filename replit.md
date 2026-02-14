@@ -8,28 +8,41 @@ HouseCat is a service health monitoring dashboard with a multi-agent test pipeli
 - **Backend:** Python FastAPI (runs on port 8000, proxied via Express `/api/*`)
 - **Dev Server:** Express.js on port 5000 handles Vite dev server + proxies API requests to FastAPI
 - **Multi-Agent Pipeline:** Planner → Browser → Evaluator (pydantic-ai agents using Claude Haiku)
+- **Data Store:** Upstash Redis (all state stored as Redis Hashes/Sets, no SQL)
 - **UI Layout:** Sidebar navigation (shadcn Sidebar) with 4 pages: Dashboard, Tests, Run Test, Settings
 - **External Services:**
   - Upstash Redis (data store)
-  - QStash (message queue)
+  - QStash (cron scheduling for test suites)
   - TinyFish (browser automation)
   - Anthropic Claude (AI agent)
 
+## Redis Key Schema
+```
+test:{id}           → Hash    (test suite definition)
+tests:all           → Set     (index of all test IDs)
+results:{id}        → Sorted Set (Phase 3 — test results, score=timestamp)
+timing:{id}         → Sorted Set (Phase 3 — response times, score=timestamp)
+events:{id}         → Stream    (Phase 3 — execution event log)
+incidents:{id}      → List      (Phase 3 — failure incidents)
+```
+
 ## Frontend Pages
-- `/` — Dashboard: placeholder metrics (total/passing/failing) + empty state with links
-- `/tests` — Tests: empty state placeholder for future test suite CRUD
+- `/` — Dashboard: real-time metrics (total/passing/failing from Redis) + recent test runs
+- `/tests` — Tests: CRUD for test suites (create, edit, delete, pause/resume) with QStash scheduling
 - `/run` — Run Test: URL + goal form → triggers Planner → Browser → Evaluator pipeline
 - `/settings` — Settings: service health cards + sanity check buttons
 
 ## Key Files
 - `client/src/App.tsx` - App root with SidebarProvider, routes, layout
 - `client/src/components/app-sidebar.tsx` - Sidebar navigation component
-- `client/src/pages/dashboard.tsx` - Dashboard page (placeholder metrics)
-- `client/src/pages/tests.tsx` - Tests page (placeholder empty state)
+- `client/src/pages/dashboard.tsx` - Dashboard page (real metrics from /api/tests)
+- `client/src/pages/tests.tsx` - Tests page (CRUD with create/edit dialogs, delete confirmation)
 - `client/src/pages/run-test.tsx` - Run Test page (pipeline form + results)
 - `client/src/pages/settings.tsx` - Settings page (health + sanity checks)
-- `backend/main.py` - FastAPI application with all API routes
-- `backend/models.py` - Pydantic models shared across agents (TestStep, TestPlan, StepResult, BrowserResult, TestResult)
+- `backend/main.py` - FastAPI application with core routes (health, callback, sanity checks, manual run)
+- `backend/models.py` - Pydantic models for agents + TestSuite CRUD schemas
+- `backend/api/tests.py` - FastAPI router for /api/tests CRUD endpoints
+- `backend/services/test_suite.py` - Redis CRUD + QStash schedule management for test suites
 - `backend/services/tinyfish.py` - TinyFish API client with SSE parsing
 - `backend/agents/planner.py` - Planner Agent: translates test goals into TinyFish prompts
 - `backend/agents/browser.py` - Browser Agent: executes tests via TinyFish
@@ -42,8 +55,14 @@ HouseCat is a service health monitoring dashboard with a multi-agent test pipeli
 
 ## API Endpoints (served by FastAPI on port 8000, proxied on port 5000)
 - `GET /api/health` - Health check for all services
-- `POST /api/callback/:testId` - QStash callback endpoint
-- `POST /api/tests/:testId/run` - Run multi-agent test pipeline (accepts JSON body with `url` and `goal`)
+- `POST /api/callback/{testId}` - QStash callback endpoint
+- `POST /api/run-test` - Manual pipeline run (accepts JSON body with `url` and `goal`)
+- `GET /api/tests` - List all test suites
+- `POST /api/tests` - Create a test suite (registers QStash cron)
+- `GET /api/tests/{id}` - Get single test suite
+- `PUT /api/tests/{id}` - Update test suite (handles QStash schedule changes)
+- `DELETE /api/tests/{id}` - Delete test suite + QStash schedule + related data
+- `POST /api/tests/{id}/run` - Manually trigger pipeline for a saved test
 - `POST /api/test/tinyfish` - TinyFish sanity check
 - `POST /api/test/agent` - Claude AI sanity check
 - `POST /api/test/qstash` - QStash delivery test
@@ -61,8 +80,6 @@ CLI usage: `python -m backend.run_pipeline "https://example.com" "Verify the pag
 - `UPSTASH_REDIS_REST_TOKEN` - Upstash Redis token
 - `QSTASH_TOKEN` - QStash token
 - `QSTASH_URL` - QStash base URL
-- `QSTASH_CURRENT_SIGNING_KEY` - QStash webhook signing key
-- `QSTASH_NEXT_SIGNING_KEY` - QStash next webhook signing key
 - `TINYFISH_API_KEY` - TinyFish API key
 - `ANTHROPIC_API_KEY` - Anthropic API key
 
@@ -74,6 +91,8 @@ CLI usage: `python -m backend.run_pipeline "https://example.com" "Verify the pag
 5. Express body-parsing middleware skips `/api` routes so the proxy can forward raw bodies
 
 ## Recent Changes
+- 2026-02-14: Phase 2 — Test Suite CRUD API backed by Redis + QStash cron scheduling + Tests page UI with create/edit/delete
+- 2026-02-14: Phase 2 — Dashboard wired to real metrics from /api/tests
 - 2026-02-14: Phase 1.5 UI reorganization — sidebar navigation + 4 pages (Dashboard, Tests, Run Test, Settings)
 - 2026-02-14: Fixed Express body-parsing conflict with API proxy (skip /api routes)
 - 2026-02-14: Phase 1 multi-agent pipeline implemented (Planner → Browser → Evaluator)

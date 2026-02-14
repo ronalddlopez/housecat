@@ -36,3 +36,40 @@ class TestResult(BaseModel):
     details: str = Field(description="Overall assessment of the test")
     step_results: list[StepResult] = Field(description="Per-step breakdown")
     error: str | None = Field(default=None, description="Error details if failed")
+
+
+class CreateTestSuite(BaseModel):
+    name: str = Field(min_length=1, max_length=100, description="Test suite name")
+    url: str = Field(description="Target URL to test")
+    goal: str = Field(min_length=1, description="Natural language test description")
+    schedule: str = Field(default="*/15 * * * *", description="Cron expression for scheduling")
+    alert_webhook: str | None = Field(default=None, description="Webhook URL for failure alerts")
+
+
+class UpdateTestSuite(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    url: str | None = None
+    goal: str | None = Field(default=None, min_length=1)
+    schedule: str | None = None
+    alert_webhook: str | None = None
+    status: str | None = Field(default=None, pattern="^(active|paused)$")
+
+
+class TestSuiteResponse(BaseModel):
+    id: str
+    name: str
+    url: str
+    goal: str
+    schedule: str
+    schedule_id: str | None = None
+    alert_webhook: str | None = None
+    status: str = "active"
+    last_result: str = "pending"
+    last_run_at: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class TestSuiteListResponse(BaseModel):
+    tests: list[TestSuiteResponse]
+    total: int

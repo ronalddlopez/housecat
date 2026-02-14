@@ -69,7 +69,7 @@ app.use((req, res, next) => {
 });
 
 function startFastAPI() {
-  const fastapi = spawn("py", ["-3.12", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"], {
+  const fastapi = spawn("python3", ["-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"], {
     stdio: "inherit",
     env: { ...process.env },
   });

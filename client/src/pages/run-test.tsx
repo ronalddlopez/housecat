@@ -23,7 +23,7 @@ export default function RunTestPage() {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/tests/manual/run", {
+      const res = await fetch("/api/run-test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url, goal }),
