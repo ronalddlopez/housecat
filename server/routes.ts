@@ -29,10 +29,10 @@ export async function registerRoutes(
     }
 
     const tinyfishKey = process.env.TINYFISH_API_KEY || "";
-    status.tinyfish = tinyfishKey.startsWith("sk-mino-") ? "key_set" : "missing";
+    status.tinyfish = tinyfishKey.length > 0 ? "key_set" : "missing";
 
     const anthropicKey = process.env.ANTHROPIC_API_KEY || "";
-    status.anthropic = anthropicKey.startsWith("sk-ant-") ? "key_set" : "missing";
+    status.anthropic = anthropicKey.length > 0 ? "key_set" : "missing";
 
     const publicUrl = process.env.REPLIT_DEV_DOMAIN
       ? `https://${process.env.REPLIT_DEV_DOMAIN}`
