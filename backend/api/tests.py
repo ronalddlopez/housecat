@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from backend.models import CreateTestSuite, UpdateTestSuite
-from backend.services.test_suite import (
+from models import CreateTestSuite, UpdateTestSuite
+from services.test_suite import (
     create_test_suite,
     list_test_suites,
     get_test_suite,
@@ -60,9 +60,9 @@ async def delete_test(test_id: str):
 
 @router.post("/{test_id}/run")
 async def run_test_now(test_id: str):
-    from backend.agents.pipeline import run_test
-    from backend.services.result_store import store_run_result
-    from backend.services.alert import send_alert_webhook
+    from agents.pipeline import run_test
+    from services.result_store import store_run_result
+    from services.alert import send_alert_webhook
 
     test = get_test_suite(test_id)
     if not test:

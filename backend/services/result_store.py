@@ -1,7 +1,7 @@
 import json
 import uuid
 from datetime import datetime, timezone
-from backend.services.config import get_redis
+from services.config import get_redis
 
 
 def store_run_result(test_id: str, final_result, plan, browser_result, triggered_by: str = "manual") -> dict:

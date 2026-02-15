@@ -1,8 +1,8 @@
 import json
 from dataclasses import dataclass
 from pydantic_ai import Agent, RunContext, UsageLimits
-from backend.models import BrowserResult, StepResult
-from backend.services.tinyfish import call_tinyfish
+from models import BrowserResult, StepResult
+from services.tinyfish import call_tinyfish
 
 
 @dataclass

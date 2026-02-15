@@ -1,9 +1,9 @@
 import time
-from backend.models import TestPlan, BrowserResult, TestResult
-from backend.agents.planner import create_plan
-from backend.agents.browser import execute_test
-from backend.agents.evaluator import evaluate_test
-from backend.services.result_store import log_event
+from models import TestPlan, BrowserResult, TestResult
+from agents.planner import create_plan
+from agents.browser import execute_test
+from agents.evaluator import evaluate_test
+from services.result_store import log_event
 
 
 async def run_test(url: str, goal: str, test_id: str | None = None) -> tuple[TestPlan, BrowserResult, TestResult]:

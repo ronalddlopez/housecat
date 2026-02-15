@@ -5,8 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 
-from backend.api.tests import router as tests_router
-from backend.services.config import get_redis, get_qstash, get_public_url
+from api.tests import router as tests_router
+from services.config import get_redis, get_qstash, get_public_url
 
 app = FastAPI(title="HouseCat", version="0.1.0")
 app.include_router(tests_router)
@@ -58,10 +58,10 @@ async def health():
 
 @app.post("/api/callback/{test_id}")
 async def qstash_callback(test_id: str):
-    from backend.services.test_suite import get_test_suite
-    from backend.services.result_store import store_run_result, log_event
-    from backend.services.alert import send_alert_webhook
-    from backend.agents.pipeline import run_test
+    from services.test_suite import get_test_suite
+    from services.result_store import store_run_result, log_event
+    from services.alert import send_alert_webhook
+    from agents.pipeline import run_test
     from datetime import datetime, timezone
 
     print(f"QStash callback received for test: {test_id}")
@@ -121,7 +121,7 @@ async def qstash_callback(test_id: str):
 
 @app.post("/api/run-test")
 async def run_test_manual(request: Request):
-    from backend.agents.pipeline import run_test
+    from agents.pipeline import run_test
 
     try:
         body = await request.json()
@@ -153,7 +153,7 @@ async def test_tinyfish():
         return {"success": False, "error": "TINYFISH_API_KEY not set"}
 
     try:
-        from backend.services.tinyfish import call_tinyfish
+        from services.tinyfish import call_tinyfish
         result = await call_tinyfish(
             "https://example.com",
             'What is the main heading on this page? Return JSON: {"heading": "..."}. Return valid JSON only.',

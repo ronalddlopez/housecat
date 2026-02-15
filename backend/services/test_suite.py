@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from backend.services.config import get_redis, get_qstash, get_public_url
+from services.config import get_redis, get_qstash, get_public_url
 
 
 def create_test_suite(data: dict) -> dict:

@@ -12,7 +12,7 @@ async def main():
     url = sys.argv[1]
     goal = sys.argv[2]
 
-    from backend.agents.pipeline import run_test
+    from agents.pipeline import run_test
     plan, browser_result, final_result = await run_test(url, goal)
 
     print("\n" + "=" * 60)
