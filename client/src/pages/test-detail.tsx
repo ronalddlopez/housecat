@@ -211,7 +211,6 @@ function RunDetailPanel({ run }: { run: RunResult }) {
         <TabsList>
           <TabsTrigger value="summary" data-testid="tab-summary">Summary</TabsTrigger>
           <TabsTrigger value="screenshots" data-testid="tab-screenshots">Screenshots</TabsTrigger>
-          <TabsTrigger value="evidence" data-testid="tab-evidence">Evidence</TabsTrigger>
           <TabsTrigger value="raw-json" data-testid="tab-raw-json">Raw JSON</TabsTrigger>
           <TabsTrigger value="plan" data-testid="tab-plan">Plan</TabsTrigger>
         </TabsList>
@@ -289,98 +288,6 @@ function RunDetailPanel({ run }: { run: RunResult }) {
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">No screenshots captured for this run.</p>
-          )}
-        </TabsContent>
-
-        <TabsContent value="evidence" className="mt-4">
-          {run.step_executions && run.step_executions.length > 0 ? (
-            <div className="space-y-4">
-              {run.step_executions.map((exec) => (
-                <div key={exec.step_number} className="space-y-2 border rounded-md p-3">
-                  <div className="flex items-center gap-2">
-                    {exec.passed ? (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-                    ) : (
-                      <XCircle className="h-4 w-4 text-red-500 shrink-0" />
-                    )}
-                    <span className="text-sm font-medium">Step {exec.step_number}: {exec.description}</span>
-                    {exec.streaming_url && (
-                      <a
-                        href={exec.streaming_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="ml-auto text-xs text-blue-500 hover:underline flex items-center gap-1"
-                        data-testid={`link-step-preview-${exec.step_number}`}
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                        Preview
-                      </a>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground">{exec.details}</p>
-                  {exec.error && (
-                    <p className="text-xs text-red-500">Error: {exec.error}</p>
-                  )}
-                  {exec.tinyfish_data && (
-                    <Table>
-                      <TableBody>
-                        {Object.entries(exec.tinyfish_data).map(([key, value]) => (
-                          <TableRow key={key}>
-                            <TableCell className="font-medium text-xs font-mono py-1">{key}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground py-1">
-                              {typeof value === "object" ? JSON.stringify(value) : String(value)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : run.tinyfish_data ? (() => {
-            const v = run.tinyfish_data.verification || run.tinyfish_data;
-            const checks = v?.checks;
-            return (
-              <div className="space-y-3">
-                <Table>
-                  <TableBody>
-                    {(v?.goal || run.tinyfish_data.goal) && (
-                      <TableRow>
-                        <TableCell className="font-medium text-sm">Goal</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{v?.goal || run.tinyfish_data.goal}</TableCell>
-                      </TableRow>
-                    )}
-                    {(v?.status || run.tinyfish_data.status) && (
-                      <TableRow>
-                        <TableCell className="font-medium text-sm">Status</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{v?.status || run.tinyfish_data.status}</TableCell>
-                      </TableRow>
-                    )}
-                    {(v?.message || run.tinyfish_data.message) && (
-                      <TableRow>
-                        <TableCell className="font-medium text-sm">Message</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{v?.message || run.tinyfish_data.message}</TableCell>
-                      </TableRow>
-                    )}
-                    {checks && typeof checks === "object" && !Array.isArray(checks) && Object.entries(checks).map(([key, value]) => (
-                      <TableRow key={key}>
-                        <TableCell className="font-medium text-sm font-mono">{key}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{String(value)}</TableCell>
-                      </TableRow>
-                    ))}
-                    {checks && Array.isArray(checks) && checks.map((check: any, idx: number) => (
-                      <TableRow key={idx}>
-                        <TableCell className="font-medium text-sm">{check.name || `Check ${idx + 1}`}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{check.result || check.status || JSON.stringify(check)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            );
-          })() : (
-            <p className="text-sm text-muted-foreground">No verification data available.</p>
           )}
         </TabsContent>
 
