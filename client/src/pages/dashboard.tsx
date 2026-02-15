@@ -8,33 +8,40 @@ import {
   FlaskConical,
   Play,
   Clock,
+  Pause,
+  Activity,
 } from "lucide-react";
 import { Link } from "wouter";
+import { formatDistanceToNow } from "date-fns";
 
-interface TestSuite {
-  id: string;
-  name: string;
-  url: string;
-  status: string;
-  last_result: string;
-  last_run_at?: string;
+interface DashboardData {
+  total_tests: number;
+  active_tests: number;
+  paused_tests: number;
+  passing: number;
+  failing: number;
+  pending: number;
+  recent_runs: {
+    test_id: string;
+    test_name: string;
+    test_url: string;
+    last_result: string;
+    last_run_at: string;
+  }[];
 }
 
 export default function Dashboard() {
-  const { data } = useQuery<{ tests: TestSuite[]; total: number }>({
-    queryKey: ["/api/tests"],
+  const { data } = useQuery<DashboardData>({
+    queryKey: ["/api/dashboard"],
     refetchInterval: 30000,
   });
 
-  const tests = data?.tests || [];
-  const total = tests.length;
-  const passing = tests.filter((t) => t.last_result === "passed").length;
-  const failing = tests.filter((t) => t.last_result === "failed").length;
-
-  const recentTests = tests
-    .filter((t) => t.last_run_at && t.last_run_at.length > 0)
-    .sort((a, b) => (b.last_run_at || "").localeCompare(a.last_run_at || ""))
-    .slice(0, 5);
+  const total = data?.total_tests ?? 0;
+  const active = data?.active_tests ?? 0;
+  const passing = data?.passing ?? 0;
+  const failing = data?.failing ?? 0;
+  const pending = data?.pending ?? 0;
+  const recentRuns = data?.recent_runs ?? [];
 
   return (
     <div className="space-y-8">
@@ -45,7 +52,7 @@ export default function Dashboard() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <Card data-testid="card-metric-total">
           <CardContent className="p-5">
             <div className="flex items-center gap-3">
@@ -56,7 +63,22 @@ export default function Dashboard() {
                 <p className="text-2xl font-bold" data-testid="text-metric-total">
                   {total}
                 </p>
-                <p className="text-xs text-muted-foreground">Total Tests</p>
+                <p className="text-xs text-muted-foreground">Total</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card data-testid="card-metric-active">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-3">
+              <div className="rounded-md p-2.5 bg-sky-500/10">
+                <Activity className="h-5 w-5 text-sky-500 dark:text-sky-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold" data-testid="text-metric-active">
+                  {active}
+                </p>
+                <p className="text-xs text-muted-foreground">Active</p>
               </div>
             </div>
           </CardContent>
@@ -91,37 +113,57 @@ export default function Dashboard() {
             </div>
           </CardContent>
         </Card>
+        <Card data-testid="card-metric-pending">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-3">
+              <div className="rounded-md p-2.5 bg-yellow-500/10">
+                <Pause className="h-5 w-5 text-yellow-500 dark:text-yellow-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold" data-testid="text-metric-pending">
+                  {pending}
+                </p>
+                <p className="text-xs text-muted-foreground">Pending</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <section>
         <h3 className="text-lg font-semibold tracking-tight mb-3">Recent Test Runs</h3>
-        {recentTests.length > 0 ? (
+        {recentRuns.length > 0 ? (
           <div className="space-y-2">
-            {recentTests.map((t) => (
-              <Card key={t.id} data-testid={`card-recent-${t.id}`}>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-3 min-w-0">
-                      {t.last_result === "passed" ? (
-                        <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-                      ) : t.last_result === "failed" ? (
-                        <XCircle className="h-4 w-4 text-red-500 shrink-0" />
-                      ) : (
-                        <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
-                      )}
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{t.name}</p>
-                        <p className="text-xs text-muted-foreground truncate">{t.url}</p>
+            {recentRuns.map((r) => (
+              <Link key={r.test_id} href={`/tests/${r.test_id}`}>
+                <Card
+                  className="hover-elevate cursor-pointer"
+                  data-testid={`card-recent-${r.test_id}`}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {r.last_result === "passed" ? (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                        ) : r.last_result === "failed" ? (
+                          <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                        ) : (
+                          <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{r.test_name}</p>
+                          <p className="text-xs text-muted-foreground truncate">{r.test_url}</p>
+                        </div>
                       </div>
+                      {r.last_run_at && (
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {formatDistanceToNow(new Date(r.last_run_at), { addSuffix: true })}
+                        </span>
+                      )}
                     </div>
-                    {t.last_run_at && (
-                      <span className="text-xs text-muted-foreground shrink-0">
-                        {new Date(t.last_run_at).toLocaleString()}
-                      </span>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              </Link>
             ))}
           </div>
         ) : (
