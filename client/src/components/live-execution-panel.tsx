@@ -351,30 +351,19 @@ export function LiveExecutionPanel({ testId, runTrigger, onComplete }: LiveExecu
                   {streamingUrl && (
                     <div className="space-y-2">
                       <p className="text-xs font-medium text-muted-foreground">Browser Preview</p>
-                      <div className="rounded-md overflow-hidden border aspect-video bg-muted">
-                        <iframe
-                          src={streamingUrl}
-                          className="w-full h-full"
-                          title="Browser Preview"
-                          sandbox="allow-same-origin allow-scripts"
-                          data-testid="iframe-preview"
-                        />
+                      <div className="rounded-md border aspect-video bg-muted flex items-center justify-center">
+                        <div className="text-center space-y-3">
+                          <Globe className="h-8 w-8 mx-auto text-emerald-500" />
+                          <p className="text-sm font-medium">TinyFish is browsing...</p>
+                          <p className="text-xs text-muted-foreground">Watch the live browser session</p>
+                          <Button size="sm" variant="default" asChild>
+                            <a href={streamingUrl} target="_blank" rel="noopener noreferrer" data-testid="link-preview">
+                              <ExternalLink className="h-3.5 w-3.5" />
+                              Open Live Preview
+                            </a>
+                          </Button>
+                        </div>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        asChild
-                      >
-                        <a
-                          href={streamingUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          data-testid="link-preview"
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                          Open Preview
-                        </a>
-                      </Button>
                     </div>
                   )}
 

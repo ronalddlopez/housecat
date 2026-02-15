@@ -1,6 +1,10 @@
 import os
 import json
+from pathlib import Path
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -12,6 +16,12 @@ from services.config import get_redis, get_qstash, get_public_url
 app = FastAPI(title="HouseCat", version="0.1.0")
 app.include_router(tests_router)
 app.include_router(results_router)
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    from services.screenshot import cleanup_browser
+    await cleanup_browser()
 
 app.add_middleware(
     CORSMiddleware,
@@ -77,7 +87,9 @@ async def qstash_callback(test_id: str, request: Request):
             current_signing_key=os.environ.get("QSTASH_CURRENT_SIGNING_KEY", ""),
             next_signing_key=os.environ.get("QSTASH_NEXT_SIGNING_KEY", ""),
         )
-        receiver.verify(body=body.decode(), signature=upstash_signature, url=str(request.url))
+        public_url = get_public_url()
+        verify_url = f"{public_url}/api/callback/{test_id}"
+        receiver.verify(body=body.decode(), signature=upstash_signature, url=verify_url)
     except Exception:
         return JSONResponse(content={"error": "Invalid signature"}, status_code=401)
 
@@ -91,7 +103,7 @@ async def qstash_callback(test_id: str, request: Request):
         return {"status": "skipped", "reason": "test is paused"}
 
     try:
-        plan, browser_result, final_result = await run_test(
+        plan, browser_result, final_result, screenshots = await run_test(
             url=test["url"],
             goal=test["goal"],
             test_id=test_id,
@@ -103,6 +115,7 @@ async def qstash_callback(test_id: str, request: Request):
             plan=plan,
             browser_result=browser_result,
             triggered_by="qstash",
+            screenshots=screenshots,
         )
 
         if not final_result.passed and test.get("alert_webhook"):
@@ -154,7 +167,7 @@ async def run_test_manual(request: Request):
         return JSONResponse(content={"error": "Both 'url' and 'goal' are required"}, status_code=400)
 
     try:
-        plan, browser_result, final_result = await run_test(url, goal)
+        plan, browser_result, final_result, _screenshots = await run_test(url, goal)
 
         return {
             "plan": plan.model_dump(),

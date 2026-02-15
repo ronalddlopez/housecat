@@ -13,7 +13,7 @@ async def main():
     goal = sys.argv[2]
 
     from agents.pipeline import run_test
-    plan, browser_result, final_result = await run_test(url, goal)
+    _plan, _browser_result, final_result, _screenshots = await run_test(url, goal)
 
     print("\n" + "=" * 60)
     print("FULL RESULT:")

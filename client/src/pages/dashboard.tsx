@@ -27,6 +27,10 @@ interface DashboardData {
     test_url: string;
     last_result: string;
     last_run_at: string;
+    steps_passed: number | null;
+    steps_total: number | null;
+    duration_ms: number | null;
+    triggered_by: string | null;
   }[];
 }
 
@@ -157,7 +161,24 @@ export default function Dashboard() {
                         )}
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{r.test_name}</p>
-                          <p className="text-xs text-muted-foreground truncate">{r.test_url}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-xs text-muted-foreground truncate">{r.test_url}</p>
+                            {r.steps_total != null && (
+                              <span className="text-xs text-muted-foreground" data-testid={`text-steps-${r.test_id}`}>
+                                {r.steps_passed}/{r.steps_total} steps
+                              </span>
+                            )}
+                            {r.duration_ms != null && (
+                              <span className="text-xs text-muted-foreground" data-testid={`text-duration-${r.test_id}`}>
+                                {(r.duration_ms / 1000).toFixed(1)}s
+                              </span>
+                            )}
+                            {r.triggered_by && (
+                              <span className="text-xs text-muted-foreground capitalize" data-testid={`text-source-${r.test_id}`}>
+                                {r.triggered_by}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                       {r.last_run_at && (

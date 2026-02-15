@@ -69,7 +69,7 @@ async def run_test_now(test_id: str):
         return JSONResponse(content={"error": "Test not found"}, status_code=404)
 
     try:
-        plan, browser_result, final_result = await run_test(
+        plan, browser_result, final_result, screenshots = await run_test(
             url=test["url"],
             goal=test["goal"],
             test_id=test_id,
@@ -81,6 +81,7 @@ async def run_test_now(test_id: str):
             plan=plan,
             browser_result=browser_result,
             triggered_by="manual",
+            screenshots=screenshots,
         )
 
         if not final_result.passed and test.get("alert_webhook"):
