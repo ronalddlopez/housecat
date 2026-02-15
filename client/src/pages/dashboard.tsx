@@ -1,4 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,9 +12,11 @@ import {
   Clock,
   Pause,
   Activity,
+  Loader2,
 } from "lucide-react";
 import { Link } from "wouter";
 import { formatDistanceToNow } from "date-fns";
+import { TestForm, FormState, emptyForm } from "@/components/test-form";
 
 interface DashboardData {
   total_tests: number;
@@ -21,6 +25,8 @@ interface DashboardData {
   passing: number;
   failing: number;
   pending: number;
+  last_run_at_global: string | null;
+  next_run_approx_minutes: number | null;
   recent_runs: {
     test_id: string;
     test_name: string;
@@ -51,6 +57,23 @@ export default function Dashboard() {
   const failing = data?.failing ?? 0;
   const pending = data?.pending ?? 0;
   const recentRuns = data?.recent_runs ?? [];
+
+  // Create form state
+  const [form, setForm] = useState<FormState>(emptyForm);
+
+  const createMutation = useMutation({
+    mutationFn: (body: FormState) => apiRequest("POST", "/api/tests", body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      setForm(emptyForm);
+    },
+  });
+
+  const formValid =
+    form.name.trim().length > 0 &&
+    form.url.trim().length > 0 &&
+    form.goal.trim().length > 0;
 
   return (
     <div className="space-y-8">
@@ -139,6 +162,32 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      {/* Create Test Suite Form */}
+      <section>
+        <h3 className="text-lg font-semibold tracking-tight mb-3">Create Test Suite</h3>
+        <Card>
+          <CardContent className="p-5">
+            <TestForm form={form} setForm={setForm} disabled={createMutation.isPending} />
+            <div className="flex items-center justify-end gap-2 mt-4">
+              <Button
+                onClick={() => createMutation.mutate(form)}
+                disabled={!formValid || createMutation.isPending}
+                data-testid="button-dashboard-create"
+              >
+                {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Create Test
+              </Button>
+            </div>
+            {createMutation.isError && (
+              <p className="text-sm text-red-600 dark:text-red-400 mt-2">
+                {createMutation.error.message}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* Recent Test Runs */}
       <section>
         <h3 className="text-lg font-semibold tracking-tight mb-3">Recent Test Runs</h3>
         {recentRuns.length > 0 ? (
@@ -204,7 +253,7 @@ export default function Dashboard() {
                     No test runs yet
                   </p>
                   <p className="text-sm text-muted-foreground max-w-sm">
-                    Create a test suite or run a quick test to see results here.
+                    Create a test suite above or run a quick test to see results here.
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
