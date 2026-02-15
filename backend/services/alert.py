@@ -1,4 +1,5 @@
 import httpx
+from urllib.parse import urlparse
 from datetime import datetime, timezone
 
 
@@ -32,6 +33,8 @@ async def send_alert_webhook(webhook_url: str, test_data: dict, run_record: dict
                 headers={"Content-Type": "application/json"},
             )
             return response.status_code < 400
-    except Exception as e:
-        print(f"Alert webhook failed for {webhook_url}: {e}")
+    except httpx.HTTPError as e:
+        parsed = urlparse(webhook_url)
+        sanitized_url = f"{parsed.scheme}://{parsed.netloc}"
+        print(f"Alert webhook failed for {sanitized_url}: {e}")
         return False

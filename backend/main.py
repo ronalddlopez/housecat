@@ -57,14 +57,29 @@ async def health():
 
 
 @app.post("/api/callback/{test_id}")
-async def qstash_callback(test_id: str):
+async def qstash_callback(test_id: str, request: Request):
     from services.test_suite import get_test_suite
     from services.result_store import store_run_result, log_event
     from services.alert import send_alert_webhook
     from agents.pipeline import run_test
     from datetime import datetime, timezone
+    from qstash import Receiver
 
-    print(f"QStash callback received for test: {test_id}")
+    upstash_signature = request.headers.get("upstash-signature", "")
+    if not upstash_signature:
+        return JSONResponse(content={"error": "Missing Upstash-Signature header"}, status_code=400)
+
+    body = await request.body()
+    try:
+        receiver = Receiver(
+            current_signing_key=os.environ.get("QSTASH_CURRENT_SIGNING_KEY", ""),
+            next_signing_key=os.environ.get("QSTASH_NEXT_SIGNING_KEY", ""),
+        )
+        receiver.verify(body=body.decode(), signature=upstash_signature, url=str(request.url))
+    except Exception:
+        return JSONResponse(content={"error": "Invalid signature"}, status_code=401)
+
+    print(f"QStash callback verified for test: {test_id}")
 
     test = get_test_suite(test_id)
     if not test:
@@ -93,11 +108,13 @@ async def qstash_callback(test_id: str):
             if alert_sent:
                 redis = get_redis()
                 import json as _json
-                incidents = redis.lrange(f"incidents:{test_id}", 0, 0)
-                if incidents:
-                    incident = _json.loads(incidents[0])
-                    incident["alert_sent"] = True
-                    redis.lset(f"incidents:{test_id}", 0, _json.dumps(incident))
+                incidents = redis.lrange(f"incidents:{test_id}", 0, -1)
+                for idx, raw in enumerate(incidents):
+                    incident = _json.loads(raw)
+                    if incident.get("run_id") == run_record["run_id"]:
+                        incident["alert_sent"] = True
+                        redis.lset(f"incidents:{test_id}", idx, _json.dumps(incident))
+                        break
 
         return {
             "status": "completed",
