@@ -60,6 +60,7 @@ interface PlanStep {
   step_number: number;
   description: string;
   success_criteria: string;
+  tinyfish_goal?: string;
 }
 
 interface Plan {
@@ -74,6 +75,19 @@ interface Screenshot {
   url: string;
   image_base64: string;
   captured_at: string;
+}
+
+interface StepExecution {
+  step_number: number;
+  description: string;
+  tinyfish_goal: string;
+  tinyfish_raw: string | null;
+  tinyfish_data: any | null;
+  streaming_url: string | null;
+  screenshot: Screenshot | null;
+  passed: boolean;
+  details: string;
+  error: string | null;
 }
 
 interface RunResult {
@@ -93,6 +107,7 @@ interface RunResult {
   tinyfish_raw?: string;
   tinyfish_data?: any;
   streaming_url?: string;
+  step_executions?: StepExecution[];
   screenshots?: Screenshot[];
 }
 
@@ -278,7 +293,52 @@ function RunDetailPanel({ run }: { run: RunResult }) {
         </TabsContent>
 
         <TabsContent value="evidence" className="mt-4">
-          {run.tinyfish_data ? (() => {
+          {run.step_executions && run.step_executions.length > 0 ? (
+            <div className="space-y-4">
+              {run.step_executions.map((exec) => (
+                <div key={exec.step_number} className="space-y-2 border rounded-md p-3">
+                  <div className="flex items-center gap-2">
+                    {exec.passed ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                    )}
+                    <span className="text-sm font-medium">Step {exec.step_number}: {exec.description}</span>
+                    {exec.streaming_url && (
+                      <a
+                        href={exec.streaming_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-auto text-xs text-blue-500 hover:underline flex items-center gap-1"
+                        data-testid={`link-step-preview-${exec.step_number}`}
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        Preview
+                      </a>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{exec.details}</p>
+                  {exec.error && (
+                    <p className="text-xs text-red-500">Error: {exec.error}</p>
+                  )}
+                  {exec.tinyfish_data && (
+                    <Table>
+                      <TableBody>
+                        {Object.entries(exec.tinyfish_data).map(([key, value]) => (
+                          <TableRow key={key}>
+                            <TableCell className="font-medium text-xs font-mono py-1">{key}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground py-1">
+                              {typeof value === "object" ? JSON.stringify(value) : String(value)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : run.tinyfish_data ? (() => {
             const v = run.tinyfish_data.verification || run.tinyfish_data;
             const checks = v?.checks;
             return (
@@ -325,7 +385,33 @@ function RunDetailPanel({ run }: { run: RunResult }) {
         </TabsContent>
 
         <TabsContent value="raw-json" className="mt-4">
-          {run.tinyfish_raw ? (
+          {run.step_executions && run.step_executions.length > 0 ? (
+            <div className="space-y-3">
+              {run.step_executions.map((exec) => (
+                <div key={exec.step_number} className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium">Step {exec.step_number}: {exec.description}</span>
+                    {exec.tinyfish_raw && (
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        data-testid={`button-copy-step-${exec.step_number}`}
+                        onClick={() => {
+                          navigator.clipboard.writeText(exec.tinyfish_raw!);
+                          toast({ title: "Copied to clipboard" });
+                        }}
+                      >
+                        <Copy className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                  <pre className="p-3 rounded-md text-xs overflow-auto max-h-48 bg-zinc-900 text-zinc-100 dark:bg-zinc-950">
+                    {exec.tinyfish_raw || "No raw data for this step"}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          ) : run.tinyfish_raw ? (
             <div className="relative">
               <Button
                 variant="outline"

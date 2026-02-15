@@ -1,7 +1,7 @@
 import json
 from dataclasses import dataclass
 from pydantic_ai import Agent, RunContext, UsageLimits
-from models import BrowserResult, StepResult
+from models import BrowserResult, StepResult, StepExecution
 from services.tinyfish import call_tinyfish
 
 
@@ -44,6 +44,7 @@ async def browse(ctx: RunContext[BrowserDeps], url: str, goal: str) -> str:
 
 
 async def execute_test(url: str, tinyfish_goal: str) -> BrowserResult:
+    """Execute a full test with all steps combined (legacy)."""
     deps = BrowserDeps(url=url, tinyfish_goal=tinyfish_goal)
     result = await browser_agent.run(
         f"Execute this test:\nURL: {url}\nGoal:\n{tinyfish_goal}",
@@ -51,3 +52,45 @@ async def execute_test(url: str, tinyfish_goal: str) -> BrowserResult:
         usage_limits=UsageLimits(request_limit=4),
     )
     return result.output
+
+
+async def execute_step(url: str, step_number: int, description: str, tinyfish_goal: str) -> StepExecution:
+    """Execute a single step via TinyFish and return a StepExecution with raw data."""
+    tinyfish_result = await call_tinyfish(url, tinyfish_goal)
+
+    tinyfish_data = None
+    tinyfish_raw = tinyfish_result.get("raw")
+    if tinyfish_raw:
+        try:
+            tinyfish_data = json.loads(tinyfish_raw) if isinstance(tinyfish_raw, str) else tinyfish_raw
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    passed = tinyfish_result.get("success", False)
+    details = ""
+    error = tinyfish_result.get("error")
+
+    if tinyfish_data:
+        details = tinyfish_data.get("verification", "") or tinyfish_data.get("action_performed", "") or tinyfish_data.get("message", "")
+        if tinyfish_data.get("success") is False:
+            passed = False
+        elif tinyfish_data.get("success") is True:
+            passed = True
+    elif error:
+        details = error
+        passed = False
+    else:
+        details = "Step executed" if passed else "Step failed"
+
+    return StepExecution(
+        step_number=step_number,
+        description=description,
+        tinyfish_goal=tinyfish_goal,
+        tinyfish_raw=tinyfish_raw if isinstance(tinyfish_raw, str) else json.dumps(tinyfish_raw) if tinyfish_raw else None,
+        tinyfish_data=tinyfish_data,
+        streaming_url=tinyfish_result.get("streaming_url"),
+        screenshot=None,
+        passed=passed,
+        details=details,
+        error=error,
+    )

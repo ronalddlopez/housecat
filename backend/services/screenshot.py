@@ -51,6 +51,13 @@ async def capture_screenshot(url: str, wait_seconds: int = 2) -> str | None:
 
 
 async def capture_before_after(url: str, step_count: int, phase: str = "after") -> dict | None:
+    """Capture a single screenshot and return it as a dict.
+
+    Args:
+        url: The URL to screenshot
+        step_count: Total steps in the test plan
+        phase: "before" or "after" — determines step_number (0 for before, step_count for after)
+    """
     screenshot_b64 = await capture_screenshot(url)
     if not screenshot_b64:
         return None

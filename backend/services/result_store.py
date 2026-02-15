@@ -9,6 +9,12 @@ def store_run_result(test_id: str, final_result, plan, browser_result, triggered
     now = datetime.now(timezone.utc)
     run_id = str(uuid.uuid4())[:8]
 
+    step_executions = []
+    if hasattr(browser_result, 'step_executions'):
+        step_executions = browser_result.step_executions
+    elif hasattr(browser_result, 'model_dump'):
+        step_executions = browser_result.model_dump().get('step_executions', [])
+
     tinyfish_data = None
     if browser_result.raw_result:
         try:
@@ -33,6 +39,7 @@ def store_run_result(test_id: str, final_result, plan, browser_result, triggered
         "tinyfish_raw": browser_result.raw_result,
         "tinyfish_data": tinyfish_data,
         "streaming_url": browser_result.streaming_url,
+        "step_executions": step_executions if isinstance(step_executions, list) else [],
         "screenshots": screenshots or [],
     }
 
