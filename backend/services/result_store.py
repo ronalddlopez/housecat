@@ -28,7 +28,7 @@ def store_run_result(test_id: str, final_result, plan, browser_result, triggered
 
     redis.zadd(f"results:{test_id}", {json.dumps(run_record): timestamp})
 
-    redis.zadd(f"timing:{test_id}", {f"{run_id}:{final_result.duration_ms}": timestamp})
+    redis.zadd(f"timing:{test_id}", {f"{final_result.duration_ms}:{run_id}": timestamp})
 
     redis.hset(f"test:{test_id}", values={
         "last_result": "passed" if final_result.passed else "failed",
