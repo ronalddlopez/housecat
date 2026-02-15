@@ -61,14 +61,33 @@ async def delete_test(test_id: str):
 @router.post("/{test_id}/run")
 async def run_test_now(test_id: str):
     from backend.agents.pipeline import run_test
+    from backend.services.result_store import store_run_result
+    from backend.services.alert import send_alert_webhook
 
     test = get_test_suite(test_id)
     if not test:
         return JSONResponse(content={"error": "Test not found"}, status_code=404)
 
     try:
-        plan, browser_result, final_result = await run_test(test["url"], test["goal"])
+        plan, browser_result, final_result = await run_test(
+            url=test["url"],
+            goal=test["goal"],
+            test_id=test_id,
+        )
+
+        run_record = store_run_result(
+            test_id=test_id,
+            final_result=final_result,
+            plan=plan,
+            browser_result=browser_result,
+            triggered_by="manual",
+        )
+
+        if not final_result.passed and test.get("alert_webhook"):
+            await send_alert_webhook(test["alert_webhook"], test, run_record)
+
         return {
+            "run_id": run_record["run_id"],
             "plan": plan.model_dump(),
             "browser_result": browser_result.model_dump(),
             "result": final_result.model_dump(),

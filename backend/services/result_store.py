@@ -30,7 +30,7 @@ def store_run_result(test_id: str, final_result, plan, browser_result, triggered
 
     redis.zadd(f"timing:{test_id}", {str(final_result.duration_ms): timestamp})
 
-    redis.hset(f"test:{test_id}", {
+    redis.hset(f"test:{test_id}", values={
         "last_result": "passed" if final_result.passed else "failed",
         "last_run_at": now.isoformat(),
     })
@@ -57,4 +57,4 @@ def log_event(test_id: str, event_type: str, message: str, **extra_fields):
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     fields.update({k: str(v) for k, v in extra_fields.items()})
-    redis.xadd(f"events:{test_id}", fields)
+    redis.xadd(f"events:{test_id}", "*", data=fields)

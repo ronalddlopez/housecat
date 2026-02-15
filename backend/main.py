@@ -58,8 +58,65 @@ async def health():
 
 @app.post("/api/callback/{test_id}")
 async def qstash_callback(test_id: str):
+    from backend.services.test_suite import get_test_suite
+    from backend.services.result_store import store_run_result, log_event
+    from backend.services.alert import send_alert_webhook
+    from backend.agents.pipeline import run_test
+    from datetime import datetime, timezone
+
     print(f"QStash callback received for test: {test_id}")
-    return {"status": "received", "testId": test_id}
+
+    test = get_test_suite(test_id)
+    if not test:
+        return JSONResponse(content={"error": "Test not found"}, status_code=404)
+
+    if test.get("status") == "paused":
+        return {"status": "skipped", "reason": "test is paused"}
+
+    try:
+        plan, browser_result, final_result = await run_test(
+            url=test["url"],
+            goal=test["goal"],
+            test_id=test_id,
+        )
+
+        run_record = store_run_result(
+            test_id=test_id,
+            final_result=final_result,
+            plan=plan,
+            browser_result=browser_result,
+            triggered_by="qstash",
+        )
+
+        if not final_result.passed and test.get("alert_webhook"):
+            alert_sent = await send_alert_webhook(test["alert_webhook"], test, run_record)
+            if alert_sent:
+                redis = get_redis()
+                import json as _json
+                incidents = redis.lrange(f"incidents:{test_id}", 0, 0)
+                if incidents:
+                    incident = _json.loads(incidents[0])
+                    incident["alert_sent"] = True
+                    redis.lset(f"incidents:{test_id}", 0, _json.dumps(incident))
+
+        return {
+            "status": "completed",
+            "test_id": test_id,
+            "passed": final_result.passed,
+            "run_id": run_record["run_id"],
+        }
+
+    except Exception as e:
+        log_event(test_id, "error", f"Pipeline error: {str(e)}")
+        redis = get_redis()
+        redis.hset(f"test:{test_id}", values={
+            "last_result": "error",
+            "last_run_at": datetime.now(timezone.utc).isoformat(),
+        })
+        return JSONResponse(
+            content={"error": str(e), "test_id": test_id},
+            status_code=500,
+        )
 
 
 @app.post("/api/run-test")
