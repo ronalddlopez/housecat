@@ -9,7 +9,8 @@ HouseCat is a service health monitoring dashboard with a multi-agent test pipeli
 - **Dev Server:** Express.js on port 5000 handles Vite dev server + proxies API requests to FastAPI
 - **Multi-Agent Pipeline:** Planner → Browser → Evaluator (pydantic-ai agents using Claude Haiku)
 - **Data Store:** Upstash Redis (all state stored as Redis Hashes/Sets, no SQL)
-- **UI Layout:** Sidebar navigation (shadcn Sidebar) with 4 pages: Dashboard, Tests, Run Test, Settings
+- **UI Layout:** Sidebar navigation (shadcn Sidebar) with 5 pages: Dashboard, Tests, Test Detail, Run Test, Settings
+- **Screenshot Service:** Playwright (Chromium) singleton browser for post-run screenshots (JPEG, 1280x720)
 - **External Services:**
   - Upstash Redis (data store)
   - QStash (cron scheduling for test suites)
@@ -99,11 +100,12 @@ CLI usage: `python -m backend.run_pipeline "https://example.com" "Verify the pag
 ## Frontend Pages
 - `/` — Dashboard: server-computed metrics from /api/dashboard (total, active, passing, failing, pending) + clickable recent test runs
 - `/tests` — Tests: CRUD for test suites (create, edit, delete, pause/resume) + Run Now button + clickable cards linking to detail
-- `/tests/:id` — Test Detail: live execution panel (SSE), response time chart (recharts), uptime card, history table, incidents tab, Run Now + Pause/Resume
+- `/tests/:id` — Test Detail: live execution panel (SSE), response time chart (recharts), uptime card, expandable history rows with 5-tab detail (Summary/Screenshots/Evidence/Raw JSON/Plan), incidents tab, Run Now + Pause/Resume
 - `/run` — Run Test: URL + goal form → triggers Planner → Browser → Evaluator pipeline
 - `/settings` — Settings: service health cards + sanity check buttons
 
 ## Recent Changes
+- 2026-02-15: Phase 7 — Rich Run Details + Screenshots: Playwright screenshot service (singleton browser), enriched RunRecord (plan, tinyfish_raw/data, streaming_url, screenshots), expandable history rows with 5-tab detail view, enhanced dashboard with steps/duration/source
 - 2026-02-15: Phase 6 — Live Execution View: LiveExecutionPanel with SSE streaming, phase indicator, step tracker, browser preview iframe, event log, auto-dismiss
 - 2026-02-15: Phase 5 — Frontend: Dashboard wired to /api/dashboard, new test detail page with chart/history/incidents, tests page Run Now button + clickable cards
 - 2026-02-15: Phase 4 — Results & Metrics API: 6 new endpoints (results history, timing, uptime, incidents, dashboard, SSE live events) in backend/api/results.py

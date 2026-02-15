@@ -4,6 +4,7 @@ hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-24_05"
+packages = ["gitFull", "playwright-driver", "chromium", "nss", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXrandr", "xorg.libXfixes", "at-spi2-core", "cups", "libdrm", "mesa", "pango", "cairo", "dbus", "alsa-lib", "libxkbcommon"]
 
 [[ports]]
 localPort = 5000
@@ -42,3 +43,9 @@ author = "agent"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
+
+[userenv]
+
+[userenv.shared]
+PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true"
+PLAYWRIGHT_BROWSERS_PATH = "/home/runner/workspace/.cache/ms-playwright"

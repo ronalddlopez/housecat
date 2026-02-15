@@ -1,0 +1,810 @@
+# Phase 7: Rich Run Details + Per-Step Screenshots + Dashboard Polish — Implementation Plan
+
+**Goal:** Make every test run explorable with full details — step breakdowns, TinyFish verification data, raw JSON output, evaluator assessment, and **per-step browser screenshots captured via Playwright**. Elevate the dashboard from basic metrics to a professional QA observability tool.
+
+**Time estimate:** ~90 minutes for Replit agent (timeboxed: 2 hours max)
+
+---
+
+## The Problem
+
+### What we have today
+When you click a run in the history table, **nothing happens**. The table shows:
+- Run ID, pass/fail badge, steps count, duration, source, time
+
+But all this rich data is computed and **thrown away**:
+- TinyFish raw JSON result (verification checks, evidence, element states)
+- TinyFish SSE step events (per-step action, purpose, message with durations)
+- The Planner's test plan (goal prompt, step descriptions, success criteria)
+- The Evaluator's detailed assessment
+- The `streaming_url` (links to TinyFish's run detail page with screenshots)
+
+### What TinyFish shows per run (from screenshots)
+- **Rendered tab**: Result summary (goal, status, message) + verification table (h1_text, evidence, h1_visible, interactive, page_loaded)
+- **JSON tab**: Full raw JSON output with copy button
+- **Screenshots tab**: Per-step browser screenshots (click a step → see what the browser saw)
+- **Step timeline**: Right sidebar with step names + durations
+
+### What HouseCat should show
+Our version of this — tailored for QA testing:
+- **Summary tab**: Pass/fail verdict, evaluator assessment, step-by-step breakdown with details
+- **Screenshots tab**: Per-step browser screenshots captured via Playwright
+- **Evidence tab**: TinyFish verification checks (the parsed JSON with h1_text, evidence, etc.)
+- **Raw JSON tab**: Full TinyFish output with copy button
+- **Plan tab**: What the Planner agent created (goal, steps, success criteria)
+- **Link to TinyFish**: "View in TinyFish" button linking to the streaming URL
+
+---
+
+## Data Gap Analysis
+
+### Currently stored per run (in `results:{test_id}` Sorted Set):
+```json
+{
+  "run_id": "a1b2c3d4",
+  "test_id": "abc12345",
+  "passed": true,
+  "duration_ms": 12340,
+  "steps_passed": 3,
+  "steps_total": 3,
+  "details": "All steps passed successfully.",        // ← Evaluator assessment
+  "step_results": [                                    // ← Per-step breakdown
+    {"step_number": 1, "passed": true, "details": "Page loaded with heading", "retry_count": 0}
+  ],
+  "error": null,
+  "triggered_by": "qstash",
+  "started_at": "...",
+  "completed_at": "..."
+}
+```
+
+### What we need to ADD to the RunRecord:
+```json
+{
+  // ... existing fields above ...
+  "plan": {                                            // ← NEW: Planner output
+    "tinyfish_goal": "Navigate to... STEP 1: ...",
+    "steps": [
+      {"step_number": 1, "description": "Navigate to homepage", "success_criteria": "Page loads"}
+    ],
+    "total_steps": 3
+  },
+  "tinyfish_raw": "{\"goal\":\"complete\", ...}",      // ← NEW: Raw TinyFish JSON string
+  "tinyfish_data": {                                    // ← NEW: Parsed TinyFish result
+    "goal": "complete",
+    "status": "success",
+    "message": "The navigation was successful.",
+    "verification": {
+      "steps": [2, 3],
+      "checks": {
+        "h1_text": "Example Domain",
+        "evidence": "presence of heading and Learn more link",
+        "h1_visible": true,
+        "interactive": true,
+        "page_loaded": true
+      }
+    }
+  },
+  "tinyfish_steps": [                                   // ← NEW: TinyFish SSE STEP events
+    {"message": "Navigating to example.com", "purpose": "navigation", "action": "goto"}
+  ],
+  "streaming_url": "https://agent.tinyfish.ai/...",    // ← NEW: Link to TinyFish run page
+  "screenshots": [                                      // ← NEW: Per-step screenshots via ScreenshotOne
+    {
+      "step_number": 1,
+      "url": "https://example.com",
+      "image_base64": "/9j/4AAQSkZJRg...",
+      "captured_at": "2025-02-15T05:15:24Z"
+    }
+  ]
+}
+```
+
+---
+
+## Implementation Plan
+
+### Part 1: Backend — Enrich RunRecord Storage
+
+#### File: `backend/services/result_store.py`
+
+Update `store_run_result()` to accept and store the additional data:
+
+**Current signature:**
+```python
+def store_run_result(test_id, final_result, plan, browser_result, triggered_by="manual"):
+```
+
+**Same signature, but extract more from `plan` and `browser_result`:**
+
+```python
+run_record = {
+    # ... existing fields ...
+
+    # NEW: Planner output
+    "plan": plan.model_dump(),
+
+    # NEW: TinyFish raw result (JSON string)
+    "tinyfish_raw": browser_result.raw_result,
+
+    # NEW: TinyFish parsed data (dict)
+    "tinyfish_data": None,
+
+    # NEW: TinyFish streaming URL
+    "streaming_url": browser_result.streaming_url,
+}
+
+# Try to parse the raw TinyFish result
+if browser_result.raw_result:
+    try:
+        run_record["tinyfish_data"] = json.loads(browser_result.raw_result)
+    except (json.JSONDecodeError, TypeError):
+        pass
+```
+
+**Note:** The `plan` and `browser_result` parameters are already passed to this function — we're just not using all their data. No callers need to change.
+
+#### File: `backend/services/tinyfish.py`
+
+The TinyFish SSE STEP events (with `message`, `purpose`, `action`) are already captured in the `steps` list but **not returned through the browser agent** to `store_run_result`.
+
+Currently, `call_tinyfish()` returns `steps_observed` as `result["steps"]`, but the browser agent's `browse` tool passes `json.dumps(result)` to the LLM, and the LLM constructs a `BrowserResult` which **doesn't have a field for TinyFish steps**.
+
+**Fix:** Add `tinyfish_steps` field to `BrowserResult` model, or store the steps in the RunRecord from the pipeline level.
+
+**Simpler approach:** Add a `tinyfish_steps` field to `BrowserResult`:
+
+```python
+# In models.py, update BrowserResult:
+class BrowserResult(BaseModel):
+    success: bool
+    step_results: list[StepResult]
+    raw_result: str | None = None
+    streaming_url: str | None = None
+    tinyfish_steps: list[dict] | None = None    # ← NEW
+    error: str | None = None
+```
+
+Then in `result_store.py`:
+```python
+"tinyfish_steps": browser_result.tinyfish_steps,
+```
+
+**However**, the browser agent (Claude) constructs `BrowserResult` from LLM output — it may not reliably pass through the `tinyfish_steps`. A more reliable approach is to store the steps separately.
+
+**Recommended approach:** Don't change the agent — instead, in `pipeline.py`, make a second `call_tinyfish` reference or log the steps to the event stream. Actually, the simplest fix: **the browser agent's `browse` tool returns `json.dumps(result)` which includes `result["steps"]`**. The LLM just doesn't put them in `BrowserResult`. We can capture them at the pipeline level by making a small change.
+
+**Actually, the simplest approach:** Just store `plan` + `raw_result` + `streaming_url` in the RunRecord. These are the highest-value additions and require zero agent changes. The TinyFish STEP events are nice-to-have but lower priority.
+
+---
+
+### Part 2: Backend — Run Detail Endpoint
+
+#### File: `backend/api/results.py`
+
+Add a new endpoint to fetch a single run's full details:
+
+```python
+@router.get("/tests/{test_id}/results/{run_id}")
+async def get_run_detail(test_id: str, run_id: str):
+    redis = get_redis()
+
+    # Search through results for the matching run_id
+    all_results = redis.zrevrange(f"results:{test_id}", 0, -1)
+
+    for raw in all_results:
+        try:
+            record = json.loads(raw)
+            if record.get("run_id") == run_id:
+                return record
+        except json.JSONDecodeError:
+            continue
+
+    return JSONResponse(content={"error": "Run not found"}, status_code=404)
+```
+
+**Note:** This scans the full Sorted Set. For hackathon scale (< 100 runs per test), this is fine. For production, you'd store runs in individual Redis Hashes (`run:{run_id}`) for O(1) lookup.
+
+---
+
+### Part 3: Frontend — Run Detail View
+
+#### File: `client/src/pages/test-detail.tsx` (UPDATE)
+
+Make history table rows expandable. When you click a row, it expands to show the full run details below the row.
+
+**Option A: Expandable rows (recommended)**
+Click a row → accordion-style expansion below the row showing tabs:
+
+```
+┌──────────────────────────────────────────────────┐
+│ Run ID │ Status │ Steps │ Duration │ Source│ Time │
+├──────────────────────────────────────────────────┤
+│ a1b2.. │ Passed │  3/3  │  12.3s   │ QStash│ 2m  │
+│ ┌────────────────────────────────────────────────┤
+│ │ [Summary] [Evidence] [Raw JSON] [Plan]         │
+│ │                                                │
+│ │ Summary:                                       │
+│ │ ┌────────────────────────────────────────────┐ │
+│ │ │ Evaluator Assessment                       │ │
+│ │ │ All 3 steps passed. The page loaded...     │ │
+│ │ └────────────────────────────────────────────┘ │
+│ │                                                │
+│ │ Step Results:                                  │
+│ │ ✓ Step 1: Navigate to homepage                 │
+│ │   "Page loaded successfully with heading"      │
+│ │ ✓ Step 2: Check for login form                 │
+│ │   "Login form found with email and password"   │
+│ │ ✓ Step 3: Verify submit button                 │
+│ │   "Submit button present and clickable"        │
+│ │                                                │
+│ │ [View in TinyFish ↗]                          │
+│ └────────────────────────────────────────────────┤
+│ c3d4.. │ Failed │  2/3  │  15.1s   │Manual│ 17m │
+└──────────────────────────────────────────────────┘
+```
+
+**Option B: Dialog/sheet (alternative)**
+Click a row → shadcn/ui Sheet (slide-in panel from right) with full details.
+
+**Recommendation:** Option A (expandable rows) — keeps you in context, no navigation.
+
+#### Tabs within expanded row:
+
+**Summary tab:**
+- Evaluator assessment (`details` field)
+- Error message (if failed)
+- Per-step breakdown: step number, pass/fail icon, description (from plan), details (from step_results)
+- Duration breakdown
+
+**Evidence tab (if `tinyfish_data` available):**
+- Rendered verification table (like TinyFish's "Rendered" view)
+- Goal status + message
+- Checks table: key-value pairs (h1_text, evidence, h1_visible, etc.)
+
+**Raw JSON tab (if `tinyfish_raw` available):**
+- Dark code block with formatted JSON
+- Copy button (copy to clipboard)
+
+**Plan tab:**
+- The Planner agent's output: what it decomposed the goal into
+- TinyFish goal prompt (the actual prompt sent to TinyFish)
+- Step descriptions with success criteria
+
+---
+
+### Part 4: Frontend — Dashboard Enhancement
+
+#### File: `client/src/pages/dashboard.tsx` (UPDATE)
+
+The dashboard currently shows 5 metric cards + recent runs list. Enhance the recent runs to show more context:
+
+**Current:**
+```
+✓ Login Flow — myapp.com — 2 min ago
+```
+
+**Enhanced:**
+```
+✓ Login Flow — myapp.com — 2 min ago
+  3/3 steps passed · 12.3s · QStash trigger
+```
+
+Add step count, duration, and trigger source to each recent run card. This requires the dashboard endpoint to return slightly more data — or fetch from `/api/tests/{id}/results?limit=1` per test.
+
+**Simpler approach:** Update the `GET /api/dashboard` endpoint to include the latest run's summary data (steps_passed, steps_total, duration_ms) by fetching the most recent result for each test.
+
+#### File: `backend/api/results.py` — Update dashboard endpoint
+
+```python
+@router.get("/dashboard")
+async def get_dashboard():
+    tests = list_test_suites()
+    redis = get_redis()
+
+    # ... existing counts ...
+
+    recent_runs = []
+    for t in sorted_tests[:5]:
+        run_info = {
+            "test_id": t.get("id"),
+            "test_name": t.get("name"),
+            "test_url": t.get("url"),
+            "last_result": t.get("last_result"),
+            "last_run_at": t.get("last_run_at"),
+            # NEW: fetch latest run details
+            "steps_passed": None,
+            "steps_total": None,
+            "duration_ms": None,
+            "triggered_by": None,
+        }
+
+        # Get the most recent result for this test
+        latest = redis.zrevrange(f"results:{t.get('id')}", 0, 0)
+        if latest:
+            try:
+                record = json.loads(latest[0])
+                run_info["steps_passed"] = record.get("steps_passed")
+                run_info["steps_total"] = record.get("steps_total")
+                run_info["duration_ms"] = record.get("duration_ms")
+                run_info["triggered_by"] = record.get("triggered_by")
+            except json.JSONDecodeError:
+                pass
+
+        recent_runs.append(run_info)
+
+    return { ... }
+```
+
+---
+
+### Part 5: Backend — Per-Step Screenshots via Playwright
+
+#### Why Playwright?
+
+TinyFish captures per-step browser screenshots internally but **does not expose them via their SSE API or any REST endpoint**. The screenshots are only viewable in TinyFish's own dashboard (as base64 JPEG data URIs). Their Python SDK repo is empty with no implementation.
+
+**Solution:** Use [Playwright](https://playwright.dev/python/) — a headless browser automation library — to capture our own browser screenshots of the target URL after TinyFish completes each test run.
+
+- **No rate limits**: Runs locally, no external API dependency
+- **No API key**: Zero third-party accounts to manage
+- **Full control**: Viewport size, wait strategies, JPEG quality
+- **Self-contained**: More impressive for hackathon judges
+- **Already async**: `playwright.async_api` integrates cleanly with FastAPI
+
+#### ⚠️ Known Issues & Solutions (Replit + NixOS)
+
+Replit runs on NixOS, which has specific compatibility requirements. These issues have been researched and have known solutions:
+
+| Issue | Root Cause | Solution |
+|-------|-----------|----------|
+| `playwright install` fails with apt-get | Replit uses Nix, not apt | Use `pkgs.playwright-driver.browsers` in `replit.nix` OR install with `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true` |
+| `"Host system is missing dependencies"` | Missing system libs (libnss3, libX11, etc.) | Add required Nix packages to `replit.nix` |
+| `"GLIBC version not found"` | Replit GLIBC ≠ Playwright expected version | Set `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true` |
+| `"RuntimeError: event loop already running"` | Using sync Playwright in async FastAPI | **Must** use `from playwright.async_api import async_playwright` |
+| Browser crashes / OOM on free tier | Chromium uses ~150MB RAM per instance | Single global browser instance with context reuse (NOT per-request launches) |
+| `"Looks like you launched a headed browser"` | Trying headed mode in container | Always `headless=True` with `--no-sandbox` arg |
+
+#### Setup: Installation on Replit
+
+**Step 1: Add Playwright to `pyproject.toml` / `requirements.txt`:**
+```
+playwright>=1.40.0
+```
+
+**Step 2: Update `.replit` or `replit.nix` to include system dependencies:**
+
+Option A — Add to `replit.nix` (preferred):
+```nix
+{ pkgs }: {
+  deps = [
+    pkgs.python311
+    pkgs.nodejs_20
+    # System libs required by Chromium
+    pkgs.chromium
+    pkgs.nss
+    pkgs.xorg.libX11
+    pkgs.xorg.libXcomposite
+    pkgs.xorg.libXdamage
+    pkgs.xorg.libXrandr
+    pkgs.xorg.libXfixes
+    pkgs.at-spi2-core
+    pkgs.cups
+    pkgs.libdrm
+    pkgs.mesa
+    pkgs.pango
+    pkgs.cairo
+    pkgs.dbus
+    pkgs.alsa-lib
+    pkgs.libxkbcommon
+  ];
+}
+```
+
+Option B — If `replit.nix` not available, set environment variables:
+```bash
+export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
+export PLAYWRIGHT_BROWSERS_PATH=/home/runner/.cache/ms-playwright
+```
+
+**Step 3: Install Chromium (one-time, in Replit Shell):**
+```bash
+playwright install chromium
+```
+This downloads ~150MB of Chromium binaries. Only needs to run once.
+
+**Fallback:** If Chromium install fails on Replit, fall back to ScreenshotOne API (same integration pattern — `capture_screenshot(url) → base64`). The function signature stays identical, only the implementation changes.
+
+#### File: `backend/services/screenshot.py` (NEW)
+
+```python
+import base64
+import asyncio
+from datetime import datetime, timezone
+from playwright.async_api import async_playwright, Browser, BrowserContext
+
+# Global browser instance — reused across all screenshot requests
+# This is CRITICAL for Replit: launching a new browser per request uses ~150MB each
+# Reusing a single instance keeps memory at ~150MB total
+_browser: Browser | None = None
+_context: BrowserContext | None = None
+_playwright = None
+
+
+async def _get_browser() -> Browser:
+    """Get or create the global browser instance (singleton pattern)."""
+    global _browser, _context, _playwright
+    if _browser is None or not _browser.is_connected():
+        _playwright = await async_playwright().start()
+        _browser = await _playwright.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",               # Required for container environments
+                "--disable-dev-shm-usage",    # Use /tmp instead of /dev/shm (Replit has limited shared memory)
+                "--disable-gpu",              # No GPU in Replit containers
+                "--single-process",           # Reduces memory footprint
+                "--disable-setuid-sandbox",   # Container compatibility
+            ],
+        )
+        _context = await _browser.new_context(
+            viewport={"width": 1280, "height": 720},
+            device_scale_factor=1,
+        )
+    return _browser
+
+
+async def capture_screenshot(url: str, wait_seconds: int = 2) -> str | None:
+    """Capture a screenshot of a URL and return base64-encoded JPEG string.
+
+    Args:
+        url: The URL to screenshot
+        wait_seconds: Seconds to wait after page load for JS rendering
+
+    Returns:
+        Base64-encoded JPEG string, or None if capture fails
+    """
+    try:
+        browser = await _get_browser()
+        page = await _context.new_page()
+
+        try:
+            # Navigate with networkidle wait — ensures JS/CSS/images are loaded
+            await page.goto(url, wait_until="networkidle", timeout=15000)
+
+            # Extra wait for dynamic content (React/Vue/Angular rendering)
+            if wait_seconds > 0:
+                await asyncio.sleep(wait_seconds)
+
+            # Capture as JPEG with quality 80 — good balance of quality vs size
+            # ~50-150KB per screenshot at 1280x720
+            screenshot_bytes = await page.screenshot(
+                type="jpeg",
+                quality=80,
+                full_page=False,  # Viewport only, not full scroll
+            )
+
+            return base64.b64encode(screenshot_bytes).decode("utf-8")
+
+        finally:
+            await page.close()  # Always close the page, keep context alive
+
+    except Exception:
+        return None  # Best-effort: never block the pipeline
+
+
+async def capture_step_screenshots(url: str, step_count: int) -> list[dict]:
+    """Capture a screenshot of the target URL after test execution.
+
+    Captures the final page state after all TinyFish steps complete.
+    This shows what the page looked like at the time of testing.
+
+    Args:
+        url: The target URL that was tested
+        step_count: Total number of steps (screenshot is associated with the last step)
+
+    Returns:
+        List of screenshot dicts with step_number, url, image_base64, captured_at
+    """
+    screenshot_b64 = await capture_screenshot(url)
+    if not screenshot_b64:
+        return []
+
+    return [{
+        "step_number": step_count,
+        "url": url,
+        "image_base64": screenshot_b64,
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+    }]
+
+
+async def cleanup_browser():
+    """Cleanup browser resources. Call on app shutdown."""
+    global _browser, _context, _playwright
+    if _context:
+        await _context.close()
+        _context = None
+    if _browser:
+        await _browser.close()
+        _browser = None
+    if _playwright:
+        await _playwright.stop()
+        _playwright = None
+```
+
+**Key design decisions:**
+- **Singleton browser**: One Chromium instance shared across all requests (~150MB), NOT per-request (~150MB × N)
+- **Reusable context**: One `BrowserContext` with shared viewport settings, new `Page` per screenshot
+- **JPEG quality 80**: Sweet spot — ~50-150KB per screenshot at 1280×720
+- **`networkidle` wait**: Ensures JS frameworks finish rendering before capture
+- **`--disable-dev-shm-usage`**: Critical for Replit — uses /tmp instead of limited /dev/shm
+- **`--single-process`**: Reduces memory footprint (safe in our controlled environment)
+- **Graceful failure**: Returns `None` if anything fails, never raises
+
+#### File: `backend/main.py` (UPDATE — add browser lifecycle)
+
+Register startup/shutdown events to manage the browser instance:
+
+```python
+from services.screenshot import cleanup_browser
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await cleanup_browser()
+```
+
+**Note:** The browser is lazily initialized on first screenshot request (no startup delay). Only cleanup is needed on shutdown.
+
+#### File: `backend/agents/pipeline.py` (UPDATE)
+
+After TinyFish completes and before the Evaluator runs, capture a screenshot:
+
+```python
+from services.screenshot import capture_step_screenshots
+
+async def run_test(url, goal, test_id=None):
+    # ... Planner phase ...
+    # ... Browser phase (TinyFish) ...
+
+    # NEW: Capture screenshot of target URL after browser phase
+    screenshots = []
+    try:
+        screenshots = await capture_step_screenshots(url, plan.total_steps)
+        if test_id and screenshots:
+            _log(test_id, "screenshot_captured",
+                 f"Captured {len(screenshots)} screenshot(s)")
+    except Exception:
+        pass  # Screenshots are best-effort, never block the pipeline
+
+    # ... Evaluator phase ...
+
+    return plan, browser_result, final_result, screenshots  # ← ADD screenshots to return
+```
+
+**Important:** The `run_test()` return signature changes from 3-tuple to 4-tuple. Update ALL 4 callers:
+
+#### File: `backend/main.py` — callback endpoint (UPDATE)
+```python
+# Before:
+plan, browser_result, final_result = await run_test(url, goal, test_id)
+store_run_result(test_id, final_result, plan, browser_result, triggered_by="qstash")
+
+# After:
+plan, browser_result, final_result, screenshots = await run_test(url, goal, test_id)
+store_run_result(test_id, final_result, plan, browser_result, triggered_by="qstash", screenshots=screenshots)
+```
+
+#### File: `backend/api/tests.py` — manual run endpoint (UPDATE)
+```python
+# Before:
+plan, browser_result, final_result = await run_test(url, goal, test_id)
+store_run_result(test_id, final_result, plan, browser_result, triggered_by="manual")
+
+# After:
+plan, browser_result, final_result, screenshots = await run_test(url, goal, test_id)
+store_run_result(test_id, final_result, plan, browser_result, triggered_by="manual", screenshots=screenshots)
+```
+
+#### File: `backend/main.py` — direct run endpoint `/api/run-test` (UPDATE)
+```python
+# Before:
+plan, browser_result, final_result = await run_test(url, goal)
+
+# After:
+plan, browser_result, final_result, screenshots = await run_test(url, goal)
+```
+
+#### File: `backend/run_pipeline.py` — CLI entry point (UPDATE)
+```python
+# Before:
+plan, browser_result, final_result = await run_test(url, goal)
+
+# After:
+plan, browser_result, final_result, screenshots = await run_test(url, goal)
+```
+
+#### File: `backend/services/result_store.py` (UPDATE)
+
+Add `screenshots` parameter:
+
+```python
+def store_run_result(test_id, final_result, plan, browser_result, triggered_by="manual", screenshots=None):
+    # ... existing fields ...
+    run_record["screenshots"] = screenshots or []
+```
+
+#### Redis Storage Consideration
+
+Base64 screenshots are ~50-150KB each (JPEG quality 80, 1280×720 viewport). Adding 1 screenshot per run increases RunRecord size from ~2-5KB to ~55-155KB. For hackathon scale (< 100 runs) this is fine at ~15MB total. For production, store screenshots in separate Redis keys (`screenshots:{run_id}`) or an object store (S3/R2).
+
+---
+
+### Part 6: Frontend — Screenshots Tab
+
+#### File: `client/src/pages/test-detail.tsx` (UPDATE)
+
+Add a **Screenshots tab** to the expandable row, between Summary and Evidence:
+
+```
+[Summary] [Screenshots] [Evidence] [Raw JSON] [Plan]
+```
+
+**Screenshots tab content:**
+- Grid layout showing per-step screenshots
+- Each screenshot card: step number label + rendered `<img>` from base64
+- Click to expand/zoom (optional: use shadcn Dialog for lightbox)
+- If no screenshots available: "No screenshots captured for this run"
+
+```tsx
+// Screenshots tab
+{run.screenshots && run.screenshots.length > 0 ? (
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    {run.screenshots.map((ss: any) => (
+      <div key={ss.step_number} className="space-y-2">
+        <p className="text-xs font-medium text-muted-foreground">
+          Step {ss.step_number} — {ss.url}
+        </p>
+        <div className="rounded-md overflow-hidden border">
+          <img
+            src={`data:image/jpeg;base64,${ss.image_base64}`}
+            alt={`Screenshot after step ${ss.step_number}`}
+            className="w-full"
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Captured {new Date(ss.captured_at).toLocaleTimeString()}
+        </p>
+      </div>
+    ))}
+  </div>
+) : (
+  <p className="text-sm text-muted-foreground">No screenshots captured for this run.</p>
+)}
+```
+
+---
+
+## File Changes
+
+### Updated Files
+
+| File | Changes |
+|------|---------|
+| `backend/services/result_store.py` | Add `plan`, `tinyfish_raw`, `tinyfish_data`, `streaming_url`, `screenshots` to RunRecord |
+| `backend/api/results.py` | Add `GET /api/tests/{id}/results/{run_id}` endpoint + enrich dashboard recent runs |
+| `backend/agents/pipeline.py` | Add screenshot capture after browser phase, update return signature to 4-tuple |
+| `backend/main.py` | Update 2 callers (callback + direct run) to unpack 4-tuple, add shutdown event for browser cleanup |
+| `backend/api/tests.py` | Update manual run caller to unpack 4-tuple + pass screenshots |
+| `backend/run_pipeline.py` | Update CLI caller to unpack 4-tuple |
+| `client/src/pages/test-detail.tsx` | Expandable history rows with Summary/Screenshots/Evidence/JSON/Plan tabs |
+| `client/src/pages/dashboard.tsx` | Enhanced recent runs with steps/duration/source |
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `backend/services/screenshot.py` | Playwright screenshot service — singleton browser, `capture_screenshot()` + `capture_step_screenshots()` + `cleanup_browser()` |
+
+---
+
+## Implementation Order
+
+| Step | Task | Time |
+|------|------|------|
+| 1 | **Playwright setup**: Add `playwright` to requirements, install Chromium, update `replit.nix` with system deps | 10 min |
+| 2 | Backend: Create `services/screenshot.py` with Playwright singleton browser + screenshot functions | 10 min |
+| 3 | Backend: Enrich RunRecord in `result_store.py` (add plan, tinyfish_raw, tinyfish_data, streaming_url, screenshots) | 5 min |
+| 4 | Backend: Update `pipeline.py` to capture screenshots + return 4-tuple | 5 min |
+| 5 | Backend: Update ALL 4 callers (`main.py` ×2, `api/tests.py`, `run_pipeline.py`) to unpack 4-tuple | 5 min |
+| 6 | Backend: Add browser cleanup shutdown event in `main.py` | 2 min |
+| 7 | Backend: Add `GET /api/tests/{id}/results/{run_id}` endpoint | 5 min |
+| 8 | Backend: Enrich dashboard endpoint with latest run details | 5 min |
+| 9 | **Smoke test**: Run a test manually, verify screenshot captured in Redis RunRecord | 5 min |
+| 10 | Frontend: Expandable history rows in test-detail.tsx | 15 min |
+| 11 | Frontend: Summary tab (evaluator assessment + step breakdown) | 8 min |
+| 12 | Frontend: Screenshots tab (per-step screenshot gallery with base64 images) | 8 min |
+| 13 | Frontend: Evidence tab (TinyFish verification checks) | 8 min |
+| 14 | Frontend: Raw JSON tab with copy button | 5 min |
+| 15 | Frontend: Plan tab (Planner output) | 5 min |
+| 16 | Frontend: Enhanced dashboard recent runs | 5 min |
+| 17 | Test end-to-end: run a test, verify all tabs + screenshot render correctly | 5 min |
+| | **Total** | **~111 min** |
+
+**Timebox strategy:** If Playwright installation fails at Step 1 (GLIBC issues, missing deps), immediately fall back to ScreenshotOne API. The `screenshot.py` interface (`capture_screenshot(url) → base64 | None`) stays identical — only the implementation changes. Budget 15 min for install troubleshooting before switching.
+
+---
+
+## Testing Plan
+
+### Test 1: Enriched RunRecord
+1. Run a test manually via the UI
+2. Check Redis (Upstash console) — the RunRecord in `results:{test_id}` should now include `plan`, `tinyfish_raw`, `tinyfish_data`, `streaming_url`
+3. Verify `tinyfish_data` contains verification checks (goal, status, message, checks)
+
+### Test 2: Run Detail Endpoint
+1. `GET /api/tests/{id}/results/{run_id}` → returns full RunRecord with all new fields
+2. `GET /api/tests/{id}/results/nonexistent` → returns 404
+
+### Test 3: Expandable History Rows
+1. Navigate to test detail page → history table
+2. Click a row → expands to show tabs
+3. Summary tab: evaluator assessment + per-step breakdown with details
+4. Evidence tab: verification checks table (h1_text, evidence, etc.)
+5. Raw JSON tab: formatted JSON with copy button
+6. Plan tab: Planner's step descriptions + success criteria + TinyFish goal
+7. Click again → collapses
+8. Click a different row → previous one collapses, new one expands
+
+### Test 4: Screenshots (Playwright)
+1. Run a test against a real URL (e.g., https://example.com)
+2. After completion, expand the run row → Screenshots tab
+3. Verify a screenshot image renders (JPEG from base64)
+4. Verify step number and timestamp are displayed
+5. Verify image shows the actual page content (not a blank/error page)
+6. If Playwright is not installed or fails, tab shows "No screenshots captured" gracefully
+
+### Test 5: View in TinyFish
+1. If `streaming_url` is present, "View in TinyFish" button appears
+2. Clicking it opens the TinyFish run detail page in a new tab
+
+### Test 6: Dashboard Enhancement
+1. Dashboard recent runs show step count, duration, and trigger source
+2. Clicking a recent run still navigates to test detail page
+
+### Test 7: Backward Compatibility
+1. Old runs (without the new fields) should still display correctly
+2. Summary tab should still work with just `details` and `step_results`
+3. Evidence/JSON/Plan/Screenshots tabs should show "No data available" for old runs
+
+---
+
+## Exit Criteria
+
+- [ ] RunRecord stores plan, TinyFish raw JSON, parsed data, streaming URL, and screenshots
+- [ ] History table rows are expandable with Summary/Screenshots/Evidence/JSON/Plan tabs
+- [ ] Summary tab shows evaluator assessment + per-step details
+- [ ] Screenshots tab shows browser screenshot(s) captured via Playwright
+- [ ] Evidence tab shows TinyFish verification checks in a clean table
+- [ ] Raw JSON tab shows formatted output with copy button
+- [ ] Plan tab shows Planner's decomposition + TinyFish goal
+- [ ] "View in TinyFish" link works when streaming URL is available
+- [ ] Dashboard recent runs show steps/duration/source
+- [ ] Old runs without new fields still display gracefully
+- [ ] Playwright failure degrades gracefully (no screenshots, no errors, pipeline still completes)
+- [ ] Browser cleanup runs on app shutdown (no orphaned Chromium processes)
+
+---
+
+## Notes
+
+- **Redis storage size**: Adding `plan` + `tinyfish_raw` + `screenshots` increases RunRecord size significantly. Screenshots are ~50-150KB each as JPEG base64. For hackathon scale (< 100 runs, ~15MB total) this is fine. For production, store screenshots in separate Redis keys (`screenshots:{run_id}`) or an object store (S3/R2).
+- **Backward compatibility**: Old RunRecords in Redis won't have the new fields. Frontend must handle `undefined`/`null` gracefully — show the tab content only if data exists, otherwise show a "Not available for this run" message.
+- **TinyFish screenshots**: TinyFish captures per-step screenshots internally but **does not expose them via the SSE API or any REST endpoint** — the Python SDK repo is empty with no implementation. Screenshots in TinyFish's dashboard are base64 JPEG data URIs loaded via their internal/proprietary API. The "View in TinyFish" link bridges this gap.
+- **Playwright screenshots**: Captures the **target URL** (not the TinyFish browser session) using our own headless Chromium. Shows the page state at the time of capture. `networkidle` wait + 2 second delay ensures JS rendering completes. Best-effort: if Playwright fails, the pipeline continues without screenshots.
+- **Playwright memory management**: Singleton browser pattern is **critical** on Replit. Each Chromium instance uses ~150MB. Launching per-request would exhaust memory instantly. The singleton pattern keeps total overhead at ~150MB regardless of request volume.
+- **Playwright on Replit/NixOS**: Key environment variables: `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true`, `--no-sandbox`, `--disable-dev-shm-usage`. If GLIBC issues arise, try `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE="ubuntu-24.04"`. See the Known Issues table in Part 5 for full troubleshooting.
+- **Fallback plan**: If Playwright install fails after 15 minutes of troubleshooting, switch to ScreenshotOne API (free tier, 100 screenshots/month). The `capture_screenshot(url) → base64 | None` interface stays identical — just change the implementation from Playwright to an HTTP call.
+- **Copy button**: Use `navigator.clipboard.writeText()` for the JSON copy feature. Show a toast on success.
+- **New dependency**: `playwright>=1.40.0` — add to `pyproject.toml` and `requirements.txt`. Run `playwright install chromium` once in Replit Shell.
+- **No new environment variables needed**: Playwright doesn't require API keys. System env vars (`PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS`) go in `replit.nix` shellHook, not Replit Secrets.
+- **No new frontend dependencies needed** — all shadcn/ui components (Collapsible, Tabs, Table) are already installed.
+- **Async-only**: Must use `from playwright.async_api import async_playwright`. The sync API will crash FastAPI with `RuntimeError: event loop already running`.

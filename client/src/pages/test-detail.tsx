@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useRoute, Link } from "wouter";
@@ -30,9 +30,13 @@ import {
   TrendingUp,
   AlertTriangle,
   Bell,
+  ChevronDown,
+  Copy,
+  ExternalLink,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { LiveExecutionPanel } from "@/components/live-execution-panel";
+import { useToast } from "@/hooks/use-toast";
 
 interface TestSuite {
   id: string;
@@ -43,6 +47,32 @@ interface TestSuite {
   status: string;
   last_result: string;
   last_run_at?: string;
+}
+
+interface StepResult {
+  step_number: number;
+  passed: boolean;
+  details: string;
+  retry_count: number;
+}
+
+interface PlanStep {
+  step_number: number;
+  description: string;
+  success_criteria: string;
+}
+
+interface Plan {
+  tinyfish_goal: string;
+  steps: PlanStep[];
+  total_steps: number;
+}
+
+interface Screenshot {
+  step_number: number;
+  url: string;
+  image_base64: string;
+  captured_at: string;
 }
 
 interface RunResult {
@@ -57,6 +87,12 @@ interface RunResult {
   triggered_by: string;
   started_at: string;
   completed_at: string;
+  step_results?: StepResult[];
+  plan?: Plan;
+  tinyfish_raw?: string;
+  tinyfish_data?: any;
+  streaming_url?: string;
+  screenshots?: Screenshot[];
 }
 
 interface TimingPoint {
@@ -150,6 +186,200 @@ function ResultBadge({ result }: { result: string }) {
   );
 }
 
+function RunDetailPanel({ run }: { run: RunResult }) {
+  const { toast } = useToast();
+
+  return (
+    <div className="p-4 border-t" data-testid={`panel-run-detail-${run.run_id}`}>
+      <Tabs defaultValue="summary">
+        <TabsList>
+          <TabsTrigger value="summary" data-testid="tab-summary">Summary</TabsTrigger>
+          <TabsTrigger value="screenshots" data-testid="tab-screenshots">Screenshots</TabsTrigger>
+          <TabsTrigger value="evidence" data-testid="tab-evidence">Evidence</TabsTrigger>
+          <TabsTrigger value="raw-json" data-testid="tab-raw-json">Raw JSON</TabsTrigger>
+          <TabsTrigger value="plan" data-testid="tab-plan">Plan</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="summary" className="mt-4 space-y-4">
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Evaluator Assessment</p>
+            <p className="text-sm text-muted-foreground">{run.details || "No assessment available."}</p>
+          </div>
+          {run.error && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-red-600 dark:text-red-400">Error</p>
+              <p className="text-sm text-muted-foreground">{run.error}</p>
+            </div>
+          )}
+          {run.step_results && run.step_results.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Step Breakdown</p>
+              <div className="space-y-1.5">
+                {run.step_results.map((sr) => {
+                  const planStep = run.plan?.steps?.find((ps) => ps.step_number === sr.step_number);
+                  return (
+                    <div key={sr.step_number} className="flex items-start gap-2 text-sm">
+                      {sr.passed ? (
+                        <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                      )}
+                      <div>
+                        <span className="font-medium">Step {sr.step_number}</span>
+                        {planStep && (
+                          <span className="text-muted-foreground"> — {planStep.description}</span>
+                        )}
+                        <p className="text-muted-foreground">{sr.details}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No step data available.</p>
+          )}
+          {run.streaming_url && (
+            <Button variant="outline" asChild data-testid="button-view-tinyfish">
+              <a href={run.streaming_url} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="h-4 w-4" />
+                View in TinyFish
+              </a>
+            </Button>
+          )}
+        </TabsContent>
+
+        <TabsContent value="screenshots" className="mt-4">
+          {run.screenshots && run.screenshots.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {run.screenshots.map((ss) => (
+                <div key={ss.step_number} className="space-y-1.5">
+                  <img
+                    src={`data:image/jpeg;base64,${ss.image_base64}`}
+                    alt={`Step ${ss.step_number} screenshot`}
+                    className="rounded-md w-full"
+                    data-testid={`img-screenshot-${ss.step_number}`}
+                  />
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-xs font-medium">Step {ss.step_number}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {format(new Date(ss.captured_at), "MMM d, HH:mm:ss")}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No screenshots captured for this run.</p>
+          )}
+        </TabsContent>
+
+        <TabsContent value="evidence" className="mt-4">
+          {run.tinyfish_data ? (() => {
+            const v = run.tinyfish_data.verification || run.tinyfish_data;
+            const checks = v?.checks;
+            return (
+              <div className="space-y-3">
+                <Table>
+                  <TableBody>
+                    {(v?.goal || run.tinyfish_data.goal) && (
+                      <TableRow>
+                        <TableCell className="font-medium text-sm">Goal</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{v?.goal || run.tinyfish_data.goal}</TableCell>
+                      </TableRow>
+                    )}
+                    {(v?.status || run.tinyfish_data.status) && (
+                      <TableRow>
+                        <TableCell className="font-medium text-sm">Status</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{v?.status || run.tinyfish_data.status}</TableCell>
+                      </TableRow>
+                    )}
+                    {(v?.message || run.tinyfish_data.message) && (
+                      <TableRow>
+                        <TableCell className="font-medium text-sm">Message</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{v?.message || run.tinyfish_data.message}</TableCell>
+                      </TableRow>
+                    )}
+                    {checks && typeof checks === "object" && !Array.isArray(checks) && Object.entries(checks).map(([key, value]) => (
+                      <TableRow key={key}>
+                        <TableCell className="font-medium text-sm font-mono">{key}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{String(value)}</TableCell>
+                      </TableRow>
+                    ))}
+                    {checks && Array.isArray(checks) && checks.map((check: any, idx: number) => (
+                      <TableRow key={idx}>
+                        <TableCell className="font-medium text-sm">{check.name || `Check ${idx + 1}`}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{check.result || check.status || JSON.stringify(check)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            );
+          })() : (
+            <p className="text-sm text-muted-foreground">No verification data available.</p>
+          )}
+        </TabsContent>
+
+        <TabsContent value="raw-json" className="mt-4">
+          {run.tinyfish_raw ? (
+            <div className="relative">
+              <Button
+                variant="outline"
+                size="icon"
+                className="absolute top-2 right-2"
+                data-testid="button-copy-json"
+                onClick={() => {
+                  navigator.clipboard.writeText(run.tinyfish_raw!);
+                  toast({ title: "Copied to clipboard" });
+                }}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+              <pre className="p-4 rounded-md text-xs overflow-auto max-h-96 bg-zinc-900 text-zinc-100 dark:bg-zinc-950">
+                {run.tinyfish_raw}
+              </pre>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No raw data available.</p>
+          )}
+        </TabsContent>
+
+        <TabsContent value="plan" className="mt-4">
+          {run.plan ? (
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <p className="text-sm font-medium">Goal</p>
+                <pre className="p-3 rounded-md text-xs bg-zinc-900 text-zinc-100 dark:bg-zinc-950">
+                  {run.plan.tinyfish_goal}
+                </pre>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Steps ({run.plan.total_steps})</p>
+                <div className="space-y-2">
+                  {run.plan.steps.map((step) => (
+                    <div key={step.step_number} className="flex items-start gap-2 text-sm">
+                      <Badge variant="secondary" className="shrink-0 no-default-hover-elevate no-default-active-elevate">
+                        {step.step_number}
+                      </Badge>
+                      <div>
+                        <p className="font-medium">{step.description}</p>
+                        <p className="text-muted-foreground text-xs">{step.success_criteria}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No plan data available.</p>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
 const chartConfig = {
   duration: {
     label: "Response Time",
@@ -161,6 +391,7 @@ export default function TestDetailPage() {
   const [, params] = useRoute("/tests/:id");
   const id = params?.id;
   const [runTrigger, setRunTrigger] = useState(0);
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
 
   const { data: test, isLoading: testLoading } = useQuery<TestSuite>({
     queryKey: ["/api/tests", id],
@@ -468,30 +699,49 @@ export default function TestDetailPage() {
                     <TableHead>Duration</TableHead>
                     <TableHead>Source</TableHead>
                     <TableHead>Time</TableHead>
+                    <TableHead className="w-10" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {results.map((r) => (
-                    <TableRow key={r.run_id} data-testid={`row-result-${r.run_id}`}>
-                      <TableCell className="font-mono text-xs" data-testid={`text-run-id-${r.run_id}`}>
-                        {r.run_id}
-                      </TableCell>
-                      <TableCell>
-                        <ResultBadge result={r.passed ? "passed" : "failed"} />
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {r.steps_passed}/{r.steps_total}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {(r.duration_ms / 1000).toFixed(1)}s
-                      </TableCell>
-                      <TableCell className="text-sm capitalize text-muted-foreground">
-                        {r.triggered_by}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatDistanceToNow(new Date(r.started_at), { addSuffix: true })}
-                      </TableCell>
-                    </TableRow>
+                    <Fragment key={r.run_id}>
+                      <TableRow
+                        data-testid={`row-result-${r.run_id}`}
+                        className="cursor-pointer hover-elevate"
+                        onClick={() => setExpandedRunId(expandedRunId === r.run_id ? null : r.run_id)}
+                      >
+                        <TableCell className="font-mono text-xs" data-testid={`text-run-id-${r.run_id}`}>
+                          {r.run_id}
+                        </TableCell>
+                        <TableCell>
+                          <ResultBadge result={r.passed ? "passed" : "failed"} />
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {r.steps_passed}/{r.steps_total}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {(r.duration_ms / 1000).toFixed(1)}s
+                        </TableCell>
+                        <TableCell className="text-sm capitalize text-muted-foreground">
+                          {r.triggered_by}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {formatDistanceToNow(new Date(r.started_at), { addSuffix: true })}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <ChevronDown
+                            className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${expandedRunId === r.run_id ? "rotate-180" : ""}`}
+                          />
+                        </TableCell>
+                      </TableRow>
+                      {expandedRunId === r.run_id && (
+                        <TableRow key={`${r.run_id}-detail`}>
+                          <TableCell colSpan={7} className="p-0">
+                            <RunDetailPanel run={r} />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
                   ))}
                 </TableBody>
               </Table>

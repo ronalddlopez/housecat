@@ -6,9 +6,10 @@ from agents.browser import execute_test
 from agents.evaluator import evaluate_test
 from services.result_store import log_event
 from services.config import get_redis
+from services.screenshot import capture_step_screenshots
 
 
-async def run_test(url: str, goal: str, test_id: str | None = None) -> tuple[TestPlan, BrowserResult, TestResult]:
+async def run_test(url: str, goal: str, test_id: str | None = None) -> tuple[TestPlan, BrowserResult, TestResult, list]:
     start = time.time()
 
     if test_id:
@@ -47,6 +48,14 @@ async def run_test(url: str, goal: str, test_id: str | None = None) -> tuple[Tes
 
         _log("browser_complete", f"Browser execution finished: {len(browser_result.step_results)} steps")
 
+        screenshots = []
+        try:
+            screenshots = await capture_step_screenshots(url, plan.total_steps)
+            if test_id and screenshots:
+                _log("screenshot_captured", f"Captured {len(screenshots)} screenshot(s)")
+        except Exception:
+            pass
+
         _log("eval_start", "Evaluating results")
         print(f"[Evaluator] Synthesizing results...")
         final_result = await evaluate_test(
@@ -63,7 +72,7 @@ async def run_test(url: str, goal: str, test_id: str | None = None) -> tuple[Tes
         print(f"[Result] {final_result.details}")
         _log("eval_complete", f"Test {status} — {final_result.steps_passed}/{final_result.steps_total} steps", passed=final_result.passed)
 
-        return plan, browser_result, final_result
+        return plan, browser_result, final_result, screenshots
 
     except Exception as e:
         _log("error", f"Pipeline error: {str(e)}")

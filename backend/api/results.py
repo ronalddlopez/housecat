@@ -10,6 +10,20 @@ from services.test_suite import list_test_suites
 router = APIRouter(prefix="/api", tags=["results"])
 
 
+@router.get("/tests/{test_id}/results/{run_id}")
+async def get_run_detail(test_id: str, run_id: str):
+    redis = get_redis()
+    all_results = redis.zrevrange(f"results:{test_id}", 0, -1)
+    for raw in all_results:
+        try:
+            record = json.loads(raw)
+            if record.get("run_id") == run_id:
+                return record
+        except json.JSONDecodeError:
+            continue
+    return JSONResponse(content={"error": "Run not found"}, status_code=404)
+
+
 @router.get("/tests/{test_id}/results")
 async def get_results(test_id: str, limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0)):
     redis = get_redis()
@@ -137,16 +151,31 @@ async def get_dashboard():
         reverse=True,
     )
 
-    recent_runs = [
-        {
+    redis = get_redis()
+    recent_runs = []
+    for t in sorted_tests[:5]:
+        run_info = {
             "test_id": t.get("id"),
             "test_name": t.get("name"),
             "test_url": t.get("url"),
             "last_result": t.get("last_result"),
             "last_run_at": t.get("last_run_at"),
+            "steps_passed": None,
+            "steps_total": None,
+            "duration_ms": None,
+            "triggered_by": None,
         }
-        for t in sorted_tests[:5]
-    ]
+        latest = redis.zrevrange(f"results:{t.get('id')}", 0, 0)
+        if latest:
+            try:
+                record = json.loads(latest[0])
+                run_info["steps_passed"] = record.get("steps_passed")
+                run_info["steps_total"] = record.get("steps_total")
+                run_info["duration_ms"] = record.get("duration_ms")
+                run_info["triggered_by"] = record.get("triggered_by")
+            except json.JSONDecodeError:
+                pass
+        recent_runs.append(run_info)
 
     return {
         "total_tests": total_tests,

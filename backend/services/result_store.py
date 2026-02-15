@@ -4,10 +4,17 @@ from datetime import datetime, timezone
 from services.config import get_redis
 
 
-def store_run_result(test_id: str, final_result, plan, browser_result, triggered_by: str = "manual") -> dict:
+def store_run_result(test_id: str, final_result, plan, browser_result, triggered_by: str = "manual", screenshots: list | None = None) -> dict:
     redis = get_redis()
     now = datetime.now(timezone.utc)
     run_id = str(uuid.uuid4())[:8]
+
+    tinyfish_data = None
+    if browser_result.raw_result:
+        try:
+            tinyfish_data = json.loads(browser_result.raw_result)
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     run_record = {
         "run_id": run_id,
@@ -22,6 +29,11 @@ def store_run_result(test_id: str, final_result, plan, browser_result, triggered
         "triggered_by": triggered_by,
         "started_at": now.isoformat(),
         "completed_at": now.isoformat(),
+        "plan": plan.model_dump(),
+        "tinyfish_raw": browser_result.raw_result,
+        "tinyfish_data": tinyfish_data,
+        "streaming_url": browser_result.streaming_url,
+        "screenshots": screenshots or [],
     }
 
     timestamp = now.timestamp()
