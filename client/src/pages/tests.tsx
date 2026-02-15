@@ -5,8 +5,6 @@ import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -25,13 +23,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   FlaskConical,
   Plus,
   Play,
@@ -41,25 +32,10 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  AlertTriangle,
   Pause,
-  ExternalLink,
+  RotateCcw,
 } from "lucide-react";
-
-const SCHEDULE_OPTIONS = [
-  { label: "Every 5 minutes", value: "*/5 * * * *" },
-  { label: "Every 15 minutes", value: "*/15 * * * *" },
-  { label: "Every 30 minutes", value: "*/30 * * * *" },
-  { label: "Every hour", value: "0 * * * *" },
-  { label: "Every 6 hours", value: "0 */6 * * *" },
-  { label: "Every 12 hours", value: "0 */12 * * *" },
-  { label: "Daily", value: "0 9 * * *" },
-];
-
-function scheduleLabel(cron: string): string {
-  const match = SCHEDULE_OPTIONS.find((o) => o.value === cron);
-  return match ? match.label : cron;
-}
+import { TestForm, FormState, emptyForm, scheduleLabel } from "@/components/test-form";
 
 interface TestSuite {
   id: string;
@@ -143,22 +119,6 @@ function ResultBadge({ result }: { result: string }) {
     </Badge>
   );
 }
-
-interface FormState {
-  name: string;
-  url: string;
-  goal: string;
-  schedule: string;
-  alert_webhook: string;
-}
-
-const emptyForm: FormState = {
-  name: "",
-  url: "",
-  goal: "",
-  schedule: "*/15 * * * *",
-  alert_webhook: "",
-};
 
 export default function TestsPage() {
   const [createOpen, setCreateOpen] = useState(false);
@@ -323,7 +283,7 @@ export default function TestsPage() {
                       {t.status === "active" ? (
                         <Pause className="h-4 w-4" />
                       ) : (
-                        <Play className="h-4 w-4" />
+                        <RotateCcw className="h-4 w-4" />
                       )}
                     </Button>
                     <Button
@@ -502,82 +462,3 @@ function RunNowButton({ testId }: { testId: string }) {
   );
 }
 
-function TestForm({
-  form,
-  setForm,
-  disabled,
-}: {
-  form: FormState;
-  setForm: (f: FormState) => void;
-  disabled: boolean;
-}) {
-  return (
-    <div className="space-y-4">
-      <div>
-        <label className="text-sm font-medium mb-1.5 block">Name</label>
-        <Input
-          placeholder="Login Flow"
-          value={form.name}
-          onChange={(e) => setForm({ ...form, name: e.target.value })}
-          disabled={disabled}
-          data-testid="input-test-name"
-        />
-      </div>
-      <div>
-        <label className="text-sm font-medium mb-1.5 block">URL</label>
-        <Input
-          type="url"
-          placeholder="https://myapp.com/login"
-          value={form.url}
-          onChange={(e) => setForm({ ...form, url: e.target.value })}
-          disabled={disabled}
-          data-testid="input-test-url"
-        />
-      </div>
-      <div>
-        <label className="text-sm font-medium mb-1.5 block">Goal</label>
-        <Textarea
-          placeholder="Describe what to test in plain English..."
-          value={form.goal}
-          onChange={(e) => setForm({ ...form, goal: e.target.value })}
-          disabled={disabled}
-          rows={3}
-          className="resize-none"
-          data-testid="input-test-goal"
-        />
-      </div>
-      <div>
-        <label className="text-sm font-medium mb-1.5 block">Schedule</label>
-        <Select
-          value={form.schedule}
-          onValueChange={(v) => setForm({ ...form, schedule: v })}
-          disabled={disabled}
-        >
-          <SelectTrigger data-testid="select-schedule">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SCHEDULE_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value} data-testid={`option-schedule-${opt.value}`}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div>
-        <label className="text-sm font-medium mb-1.5 block">
-          Alert Webhook <span className="text-muted-foreground font-normal">(optional)</span>
-        </label>
-        <Input
-          type="url"
-          placeholder="https://hooks.slack.com/..."
-          value={form.alert_webhook}
-          onChange={(e) => setForm({ ...form, alert_webhook: e.target.value })}
-          disabled={disabled}
-          data-testid="input-alert-webhook"
-        />
-      </div>
-    </div>
-  );
-}

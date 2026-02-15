@@ -177,6 +177,31 @@ async def get_dashboard():
                 pass
         recent_runs.append(run_info)
 
+    last_run_at_global = sorted_tests[0]["last_run_at"] if sorted_tests else None
+
+    CRON_INTERVAL_MINUTES = {
+        "*/5 * * * *": 5,
+        "*/15 * * * *": 15,
+        "*/30 * * * *": 30,
+        "0 * * * *": 60,
+        "0 */6 * * *": 360,
+        "0 */12 * * *": 720,
+        "0 9 * * *": 1440,
+    }
+
+    next_run_approx_minutes = None
+    active_scheduled = [t for t in tests if t.get("status") == "active" and t.get("schedule")]
+    if active_scheduled and last_run_at_global:
+        shortest_interval = min(
+            CRON_INTERVAL_MINUTES.get(t["schedule"], 15) for t in active_scheduled
+        )
+        try:
+            last_run_dt = datetime.fromisoformat(last_run_at_global)
+            minutes_since = (datetime.now(timezone.utc) - last_run_dt).total_seconds() / 60
+            next_run_approx_minutes = max(0, int(shortest_interval - minutes_since))
+        except (ValueError, TypeError):
+            next_run_approx_minutes = None
+
     return {
         "total_tests": total_tests,
         "active_tests": active_tests,
@@ -185,6 +210,8 @@ async def get_dashboard():
         "failing": failing,
         "pending": pending,
         "recent_runs": recent_runs,
+        "last_run_at_global": last_run_at_global,
+        "next_run_approx_minutes": next_run_approx_minutes,
     }
 
 
