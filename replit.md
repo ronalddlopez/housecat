@@ -42,6 +42,7 @@ incidents:{id}      → List      (Phase 3 — failure incidents)
 - `backend/main.py` - FastAPI application with core routes (health, callback, sanity checks, manual run)
 - `backend/models.py` - Pydantic models for agents + TestSuite CRUD schemas
 - `backend/api/tests.py` - FastAPI router for /api/tests CRUD endpoints
+- `backend/api/results.py` - FastAPI router for results, timing, uptime, incidents, dashboard, SSE live events
 - `backend/services/test_suite.py` - Redis CRUD + QStash schedule management for test suites
 - `backend/services/tinyfish.py` - TinyFish API client with SSE parsing
 - `backend/agents/planner.py` - Planner Agent: translates test goals into TinyFish prompts
@@ -66,6 +67,12 @@ incidents:{id}      → List      (Phase 3 — failure incidents)
 - `POST /api/test/tinyfish` - TinyFish sanity check
 - `POST /api/test/agent` - Claude AI sanity check
 - `POST /api/test/qstash` - QStash delivery test
+- `GET /api/tests/{id}/results` - Paginated run history (query: limit, offset)
+- `GET /api/tests/{id}/timing` - Response time series (query: limit)
+- `GET /api/tests/{id}/uptime` - Uptime percentage (query: hours)
+- `GET /api/tests/{id}/incidents` - Recent failure incidents (query: limit)
+- `GET /api/dashboard` - Server-computed aggregate metrics
+- `GET /api/tests/{id}/live` - SSE stream of pipeline execution events
 
 ## Multi-Agent Pipeline (Phase 1)
 The pipeline runs three AI agents in sequence:
@@ -95,6 +102,7 @@ CLI usage: `python -m backend.run_pipeline "https://example.com" "Verify the pag
 5. Express body-parsing middleware skips `/api` routes so the proxy can forward raw bodies
 
 ## Recent Changes
+- 2026-02-15: Phase 4 — Results & Metrics API: 6 new endpoints (results history, timing, uptime, incidents, dashboard, SSE live events) in backend/api/results.py
 - 2026-02-15: Phase 3 — QStash callback handler, result persistence (Sorted Sets), event logging (Streams), incident tracking (Lists), alert webhooks on failure
 - 2026-02-14: Phase 2 — Test Suite CRUD API backed by Redis + QStash cron scheduling + Tests page UI with create/edit/delete
 - 2026-02-14: Phase 2 — Dashboard wired to real metrics from /api/tests
