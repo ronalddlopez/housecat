@@ -11,9 +11,9 @@ def store_run_result(test_id: str, final_result, plan, browser_result, triggered
 
     step_executions_raw = []
     if hasattr(browser_result, 'step_executions'):
-        step_executions_raw = browser_result.step_executions
+        step_executions_raw = browser_result.step_executions or []
     elif hasattr(browser_result, 'model_dump'):
-        step_executions_raw = browser_result.model_dump().get('step_executions', [])
+        step_executions_raw = browser_result.model_dump().get('step_executions') or []
 
     step_executions = [
         se.model_dump() if hasattr(se, 'model_dump') else se

@@ -4,4 +4,5 @@ httpx>=0.28.1
 pydantic-ai-slim[anthropic]>=1.59.0
 qstash>=3.2.0
 upstash-redis>=1.6.0
+python-dotenv>=1.0.1
 uvicorn>=0.40.0

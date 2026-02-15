@@ -304,8 +304,10 @@ function RunDetailPanel({ run }: { run: RunResult }) {
                         size="icon"
                         data-testid={`button-copy-step-${exec.step_number}`}
                         onClick={() => {
-                          navigator.clipboard.writeText(exec.tinyfish_raw!);
-                          toast({ title: "Copied to clipboard" });
+                          navigator.clipboard.writeText(exec.tinyfish_raw!).then(
+                            () => toast({ title: "Copied to clipboard" }),
+                            () => toast({ title: "Failed to copy", variant: "destructive" })
+                          );
                         }}
                       >
                         <Copy className="h-3 w-3" />
@@ -326,8 +328,10 @@ function RunDetailPanel({ run }: { run: RunResult }) {
                 className="absolute top-2 right-2"
                 data-testid="button-copy-json"
                 onClick={() => {
-                  navigator.clipboard.writeText(run.tinyfish_raw!);
-                  toast({ title: "Copied to clipboard" });
+                  navigator.clipboard.writeText(run.tinyfish_raw!).then(
+                    () => toast({ title: "Copied to clipboard" }),
+                    () => toast({ title: "Failed to copy", variant: "destructive" })
+                  );
                 }}
               >
                 <Copy className="h-4 w-4" />
