@@ -1,30 +1,7 @@
-import os
 import uuid
 from datetime import datetime, timezone
-from upstash_redis import Redis
-from qstash import QStash
 
-
-def get_redis() -> Redis:
-    return Redis(
-        url=os.environ.get("UPSTASH_REDIS_REST_URL", ""),
-        token=os.environ.get("UPSTASH_REDIS_REST_TOKEN", ""),
-    )
-
-
-def get_qstash() -> QStash:
-    token = os.environ.get("QSTASH_TOKEN", "")
-    url = os.environ.get("QSTASH_URL")
-    if url:
-        return QStash(token, base_url=url)
-    return QStash(token)
-
-
-def get_public_url() -> str:
-    domain = os.environ.get("REPLIT_DEV_DOMAIN", "")
-    if domain:
-        return f"https://{domain}"
-    return os.environ.get("PUBLIC_URL", "http://localhost:5000")
+from backend.services.config import get_redis, get_qstash, get_public_url
 
 
 def create_test_suite(data: dict) -> dict:

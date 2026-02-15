@@ -4,10 +4,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
-from upstash_redis import Redis
-from qstash import QStash
 
 from backend.api.tests import router as tests_router
+from backend.services.config import get_redis, get_qstash, get_public_url
 
 app = FastAPI(title="HouseCat", version="0.1.0")
 app.include_router(tests_router)
@@ -19,28 +18,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-def get_redis():
-    return Redis(
-        url=os.environ.get("UPSTASH_REDIS_REST_URL", ""),
-        token=os.environ.get("UPSTASH_REDIS_REST_TOKEN", ""),
-    )
-
-
-def get_qstash():
-    qstash_token = os.environ.get("QSTASH_TOKEN", "")
-    qstash_url = os.environ.get("QSTASH_URL")
-    if qstash_url:
-        return QStash(qstash_token, base_url=qstash_url)
-    return QStash(qstash_token)
-
-
-def get_public_url():
-    domain = os.environ.get("REPLIT_DEV_DOMAIN", "")
-    if domain:
-        return f"https://{domain}"
-    return os.environ.get("PUBLIC_URL", "http://localhost:5000")
 
 
 @app.get("/api/health")
