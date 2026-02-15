@@ -9,11 +9,16 @@ def store_run_result(test_id: str, final_result, plan, browser_result, triggered
     now = datetime.now(timezone.utc)
     run_id = str(uuid.uuid4())[:8]
 
-    step_executions = []
+    step_executions_raw = []
     if hasattr(browser_result, 'step_executions'):
-        step_executions = browser_result.step_executions
+        step_executions_raw = browser_result.step_executions
     elif hasattr(browser_result, 'model_dump'):
-        step_executions = browser_result.model_dump().get('step_executions', [])
+        step_executions_raw = browser_result.model_dump().get('step_executions', [])
+
+    step_executions = [
+        se.model_dump() if hasattr(se, 'model_dump') else se
+        for se in step_executions_raw
+    ]
 
     tinyfish_data = None
     if browser_result.raw_result:
