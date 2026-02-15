@@ -484,6 +484,7 @@ function RunNowButton({ testId }: { testId: string }) {
     <Button
       size="icon"
       variant="ghost"
+      aria-label={`Run test ${testId}`}
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();

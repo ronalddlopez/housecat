@@ -26,17 +26,12 @@ events:{id}         → Stream    (Phase 3 — execution event log)
 incidents:{id}      → List      (Phase 3 — failure incidents)
 ```
 
-## Frontend Pages
-- `/` — Dashboard: real-time metrics (total/passing/failing from Redis) + recent test runs
-- `/tests` — Tests: CRUD for test suites (create, edit, delete, pause/resume) with QStash scheduling
-- `/run` — Run Test: URL + goal form → triggers Planner → Browser → Evaluator pipeline
-- `/settings` — Settings: service health cards + sanity check buttons
-
 ## Key Files
 - `client/src/App.tsx` - App root with SidebarProvider, routes, layout
 - `client/src/components/app-sidebar.tsx` - Sidebar navigation component
-- `client/src/pages/dashboard.tsx` - Dashboard page (real metrics from /api/tests)
+- `client/src/pages/dashboard.tsx` - Dashboard page (server-computed metrics from /api/dashboard)
 - `client/src/pages/tests.tsx` - Tests page (CRUD with create/edit dialogs, delete confirmation)
+- `client/src/pages/test-detail.tsx` - Test Detail page (chart, history, incidents, run now)
 - `client/src/pages/run-test.tsx` - Run Test page (pipeline form + results)
 - `client/src/pages/settings.tsx` - Settings page (health + sanity checks)
 - `backend/main.py` - FastAPI application with core routes (health, callback, sanity checks, manual run)

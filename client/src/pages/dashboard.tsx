@@ -36,6 +36,11 @@ export default function Dashboard() {
     refetchInterval: 30000,
   });
 
+  useQuery({
+    queryKey: ["/api/tests"],
+    refetchInterval: 30000,
+  });
+
   const total = data?.total_tests ?? 0;
   const active = data?.active_tests ?? 0;
   const passing = data?.passing ?? 0;

@@ -190,6 +190,10 @@ export default function TestDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/tests", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/tests"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tests", id, "results"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tests", id, "timing"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tests", id, "uptime"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tests", id, "incidents"] });
     },
   });
 
@@ -199,6 +203,7 @@ export default function TestDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tests", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/tests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
     },
   });
 
