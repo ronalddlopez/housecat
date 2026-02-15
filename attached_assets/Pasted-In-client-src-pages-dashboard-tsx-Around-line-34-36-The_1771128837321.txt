@@ -1,0 +1,45 @@
+In `@client/src/pages/dashboard.tsx`:
+- Around line 34-36: The dashboard removed the required /api/tests poll — add
+back a lightweight TanStack Query that polls "/api/tests" every 30s alongside
+the existing useQuery<DashboardData> for "/api/dashboard"; specifically, create
+a second useQuery call (e.g., useQuery({ queryKey: ["/api/tests"],
+refetchInterval: 30000, /* keep it lightweight: select or enabled as needed */
+})) inside the same Dashboard component or page so the app continues polling
+/api/tests per guidelines while leaving the current queryKey ["/api/dashboard"]
+unchanged.
+
+In `@client/src/pages/test-detail.tsx`:
+- Around line 187-193: The runMutation.onSuccess handler currently invalidates
+only list and dashboard queries but misses the detail queries that have infinite
+staleTime; update the onSuccess of runMutation to also call
+queryClient.invalidateQueries for the detail keys used elsewhere (e.g., the
+per-test detail queries for "results", "timing", "uptime", and "incidents") so
+that functions like runMutation, queryClient.invalidateQueries and the query
+keys ["/api/tests", id, "results"], ["/api/tests", id, "timing"], ["/api/tests",
+id, "uptime"], and ["/api/tests", id, "incidents"] are invalidated after a
+successful run.
+- Around line 196-203: The toggleMutation's onSuccess currently invalidates
+queries for ["/api/tests", id] and ["/api/tests"] but not the dashboard, causing
+stale dashboard counts; update the onSuccess of toggleMutation (the useMutation
+defined as toggleMutation) to also call queryClient.invalidateQueries({
+queryKey: ["/api/dashboard"] }) so the dashboard metrics refresh immediately
+after status changes.
+
+In `@client/src/pages/tests.tsx`:
+- Around line 483-499: The Run Now icon-only Button (the Button element
+rendering Loader2/Play and using mutation, testId) lacks an accessible name; add
+an aria-label (or include sr-only text) to the Button so screen readers can
+announce it (e.g., aria-label that references the test or testId such as "Run
+test {testId}" or "Run {testName}") and ensure the label is unique by using the
+existing testId/testName props; keep the existing onClick, disabled, and
+data-testid behavior intact.
+
+In `@replit.md`:
+- Around line 104-110: Two duplicate "## Frontend Pages" sections
+conflict—consolidate them into a single section and reconcile the API
+references: remove or merge the earlier duplicated heading that mentions
+`/api/tests`, update the unified "Frontend Pages" block to list each frontend
+route once (/, /tests, /tests/:id, /run, /settings) and ensure the dashboard
+entry references `/api/dashboard` instead of `/api/tests`; verify the Run/Test
+detail descriptions (Run Now, Pause/Resume, charts, endpoints) are preserved and
+de-duplicated so the resulting section passes markdownlint MD024.

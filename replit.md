@@ -26,17 +26,12 @@ events:{id}         → Stream    (Phase 3 — execution event log)
 incidents:{id}      → List      (Phase 3 — failure incidents)
 ```
 
-## Frontend Pages
-- `/` — Dashboard: real-time metrics (total/passing/failing from Redis) + recent test runs
-- `/tests` — Tests: CRUD for test suites (create, edit, delete, pause/resume) with QStash scheduling
-- `/run` — Run Test: URL + goal form → triggers Planner → Browser → Evaluator pipeline
-- `/settings` — Settings: service health cards + sanity check buttons
-
 ## Key Files
 - `client/src/App.tsx` - App root with SidebarProvider, routes, layout
 - `client/src/components/app-sidebar.tsx` - Sidebar navigation component
-- `client/src/pages/dashboard.tsx` - Dashboard page (real metrics from /api/tests)
+- `client/src/pages/dashboard.tsx` - Dashboard page (server-computed metrics from /api/dashboard)
 - `client/src/pages/tests.tsx` - Tests page (CRUD with create/edit dialogs, delete confirmation)
+- `client/src/pages/test-detail.tsx` - Test Detail page (chart, history, incidents, run now)
 - `client/src/pages/run-test.tsx` - Run Test page (pipeline form + results)
 - `client/src/pages/settings.tsx` - Settings page (health + sanity checks)
 - `backend/main.py` - FastAPI application with core routes (health, callback, sanity checks, manual run)
@@ -101,7 +96,15 @@ CLI usage: `python -m backend.run_pipeline "https://example.com" "Verify the pag
 4. React frontend is served by Vite with HMR
 5. Express body-parsing middleware skips `/api` routes so the proxy can forward raw bodies
 
+## Frontend Pages
+- `/` — Dashboard: server-computed metrics from /api/dashboard (total, active, passing, failing, pending) + clickable recent test runs
+- `/tests` — Tests: CRUD for test suites (create, edit, delete, pause/resume) + Run Now button + clickable cards linking to detail
+- `/tests/:id` — Test Detail: run history table, response time chart (recharts), uptime card, incidents tab, Run Now + Pause/Resume
+- `/run` — Run Test: URL + goal form → triggers Planner → Browser → Evaluator pipeline
+- `/settings` — Settings: service health cards + sanity check buttons
+
 ## Recent Changes
+- 2026-02-15: Phase 5 — Frontend: Dashboard wired to /api/dashboard, new test detail page with chart/history/incidents, tests page Run Now button + clickable cards
 - 2026-02-15: Phase 4 — Results & Metrics API: 6 new endpoints (results history, timing, uptime, incidents, dashboard, SSE live events) in backend/api/results.py
 - 2026-02-15: Phase 3 — QStash callback handler, result persistence (Sorted Sets), event logging (Streams), incident tracking (Lists), alert webhooks on failure
 - 2026-02-14: Phase 2 — Test Suite CRUD API backed by Redis + QStash cron scheduling + Tests page UI with create/edit/delete

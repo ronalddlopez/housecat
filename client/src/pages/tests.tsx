@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -279,7 +280,11 @@ export default function TestsPage() {
             <Card key={t.id} data-testid={`card-test-${t.id}`}>
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div className="space-y-1.5 min-w-0 flex-1">
+                  <Link
+                    href={`/tests/${t.id}`}
+                    className="space-y-1.5 min-w-0 flex-1 cursor-pointer"
+                    data-testid={`link-test-detail-${t.id}`}
+                  >
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-semibold text-sm" data-testid={`text-test-name-${t.id}`}>
                         {t.name}
@@ -301,8 +306,9 @@ export default function TestsPage() {
                         </span>
                       )}
                     </div>
-                  </div>
+                  </Link>
                   <div className="flex items-center gap-1 shrink-0">
+                    <RunNowButton testId={t.id} />
                     <Button
                       size="icon"
                       variant="ghost"
@@ -461,6 +467,38 @@ export default function TestsPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+function RunNowButton({ testId }: { testId: string }) {
+  const mutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/tests/${testId}/run`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tests", testId] });
+    },
+  });
+
+  return (
+    <Button
+      size="icon"
+      variant="ghost"
+      aria-label={`Run test ${testId}`}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        mutation.mutate();
+      }}
+      disabled={mutation.isPending}
+      data-testid={`button-run-${testId}`}
+    >
+      {mutation.isPending ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <Play className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+      )}
+    </Button>
   );
 }
 

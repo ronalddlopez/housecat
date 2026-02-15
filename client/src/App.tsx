@@ -9,6 +9,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import Dashboard from "@/pages/dashboard";
 import TestsPage from "@/pages/tests";
+import TestDetailPage from "@/pages/test-detail";
 import RunTestPage from "@/pages/run-test";
 import SettingsPage from "@/pages/settings";
 import NotFound from "@/pages/not-found";
@@ -17,6 +18,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/tests/:id" component={TestDetailPage} />
       <Route path="/tests" component={TestsPage} />
       <Route path="/run" component={RunTestPage} />
       <Route path="/settings" component={SettingsPage} />
