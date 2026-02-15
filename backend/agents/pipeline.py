@@ -6,7 +6,7 @@ from agents.browser import execute_test
 from agents.evaluator import evaluate_test
 from services.result_store import log_event
 from services.config import get_redis
-from services.screenshot import capture_step_screenshots
+from services.screenshot import capture_before_after
 
 
 async def run_test(url: str, goal: str, test_id: str | None = None) -> tuple[TestPlan, BrowserResult, TestResult, list]:
@@ -34,6 +34,16 @@ async def run_test(url: str, goal: str, test_id: str | None = None) -> tuple[Tes
         steps_json = json.dumps([{"step_number": s.step_number, "description": s.description} for s in plan.steps])
         _log("plan_complete", f"Plan created: {plan.total_steps} steps", steps=steps_json)
 
+        screenshots = []
+        try:
+            before_ss = await capture_before_after(url, plan.total_steps, phase="before")
+            if before_ss:
+                screenshots.append(before_ss)
+                if test_id:
+                    _log("screenshot_captured", "Captured initial page state screenshot")
+        except Exception:
+            pass
+
         _log("browser_start", "Executing test with TinyFish")
         print(f"[Browser] Executing test with TinyFish...")
         browser_result = await execute_test(url, plan.tinyfish_goal)
@@ -48,11 +58,12 @@ async def run_test(url: str, goal: str, test_id: str | None = None) -> tuple[Tes
 
         _log("browser_complete", f"Browser execution finished: {len(browser_result.step_results)} steps")
 
-        screenshots = []
         try:
-            screenshots = await capture_step_screenshots(url, plan.total_steps)
-            if test_id and screenshots:
-                _log("screenshot_captured", f"Captured {len(screenshots)} screenshot(s)")
+            after_ss = await capture_before_after(url, plan.total_steps, phase="after")
+            if after_ss:
+                screenshots.append(after_ss)
+                if test_id:
+                    _log("screenshot_captured", f"Captured {len(screenshots)} screenshot(s) total")
         except Exception:
             pass
 

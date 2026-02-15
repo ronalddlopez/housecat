@@ -83,7 +83,9 @@ async def qstash_callback(test_id: str, request: Request):
             current_signing_key=os.environ.get("QSTASH_CURRENT_SIGNING_KEY", ""),
             next_signing_key=os.environ.get("QSTASH_NEXT_SIGNING_KEY", ""),
         )
-        receiver.verify(body=body.decode(), signature=upstash_signature, url=str(request.url))
+        public_url = get_public_url()
+        verify_url = f"{public_url}/api/callback/{test_id}"
+        receiver.verify(body=body.decode(), signature=upstash_signature, url=verify_url)
     except Exception:
         return JSONResponse(content={"error": "Invalid signature"}, status_code=401)
 

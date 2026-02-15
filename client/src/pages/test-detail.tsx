@@ -70,6 +70,7 @@ interface Plan {
 
 interface Screenshot {
   step_number: number;
+  label?: string;
   url: string;
   image_base64: string;
   captured_at: string;
@@ -252,16 +253,18 @@ function RunDetailPanel({ run }: { run: RunResult }) {
         <TabsContent value="screenshots" className="mt-4">
           {run.screenshots && run.screenshots.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {run.screenshots.map((ss) => (
-                <div key={ss.step_number} className="space-y-1.5">
+              {run.screenshots.map((ss, idx) => (
+                <div key={idx} className="space-y-1.5">
                   <img
                     src={`data:image/jpeg;base64,${ss.image_base64}`}
-                    alt={`Step ${ss.step_number} screenshot`}
+                    alt={ss.label || `Step ${ss.step_number} screenshot`}
                     className="rounded-md w-full"
                     data-testid={`img-screenshot-${ss.step_number}`}
                   />
                   <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="text-xs font-medium">Step {ss.step_number}</span>
+                    <span className="text-xs font-medium">
+                      {ss.label || `Step ${ss.step_number}`}
+                    </span>
                     <span className="text-xs text-muted-foreground">
                       {format(new Date(ss.captured_at), "MMM d, HH:mm:ss")}
                     </span>

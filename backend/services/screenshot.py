@@ -50,16 +50,17 @@ async def capture_screenshot(url: str, wait_seconds: int = 2) -> str | None:
         return None
 
 
-async def capture_step_screenshots(url: str, step_count: int) -> list[dict]:
+async def capture_before_after(url: str, step_count: int, phase: str = "after") -> dict | None:
     screenshot_b64 = await capture_screenshot(url)
     if not screenshot_b64:
-        return []
-    return [{
-        "step_number": step_count,
+        return None
+    return {
+        "step_number": 0 if phase == "before" else step_count,
+        "label": "Initial page state" if phase == "before" else "Final page state",
         "url": url,
         "image_base64": screenshot_b64,
         "captured_at": datetime.now(timezone.utc).isoformat(),
-    }]
+    }
 
 
 async def cleanup_browser():
