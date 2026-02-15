@@ -1,6 +1,10 @@
 import os
 import json
+from pathlib import Path
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -163,7 +167,7 @@ async def run_test_manual(request: Request):
         return JSONResponse(content={"error": "Both 'url' and 'goal' are required"}, status_code=400)
 
     try:
-        plan, browser_result, final_result, screenshots = await run_test(url, goal)
+        plan, browser_result, final_result, _screenshots = await run_test(url, goal)
 
         return {
             "plan": plan.model_dump(),

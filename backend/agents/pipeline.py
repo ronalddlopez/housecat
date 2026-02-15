@@ -129,7 +129,7 @@ async def run_test(url: str, goal: str, test_id: str | None = None) -> tuple[Tes
         )
 
         _log("eval_start", "Evaluating results")
-        print(f"[Evaluator] Synthesizing results...")
+        print("[Evaluator] Synthesizing results...")
         final_result = await evaluate_test(
             url=url,
             goal=goal,
