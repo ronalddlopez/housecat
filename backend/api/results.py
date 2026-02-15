@@ -46,7 +46,7 @@ async def get_timing(test_id: str, limit: int = Query(50, ge=1, le=200)):
     for member, score in raw_entries:
         parts = member.split(":", 1)
         if len(parts) == 2:
-            run_id_part, duration_str = parts
+            _run_id_part, duration_str = parts
         else:
             duration_str = parts[0]
 
