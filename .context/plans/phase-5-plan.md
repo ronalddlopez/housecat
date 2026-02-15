@@ -1,0 +1,350 @@
+# Phase 5: Frontend — Dashboard + Test Detail Page — Implementation Plan
+
+**Goal:** Wire the frontend to the Phase 4 API endpoints. Dashboard shows real metrics from `/api/dashboard`. New test detail page shows run history, response time chart, uptime, and incidents. Tests page gets "Run Now" button.
+
+**Time estimate:** ~45 minutes for Replit agent
+
+---
+
+## What Exists Today
+
+| Page | Current State |
+|------|--------------|
+| Dashboard (`/`) | Fetches `/api/tests`, computes metrics **client-side** from `last_result`. Shows recent runs as simple cards. |
+| Tests (`/tests`) | Full CRUD UI with create/edit/delete dialogs, pause/resume. No "Run Now" button. No link to detail page. |
+| Run Test (`/run`) | Ad-hoc test runner (URL + goal form). Shows results inline. Not connected to saved tests. |
+| Settings (`/settings`) | Service health cards + sanity checks. No changes needed. |
+| Test Detail | **Does not exist.** No way to view history for a specific test. |
+
+**Already installed (no new deps needed):**
+- `recharts` — charting library
+- `date-fns` — date formatting
+- `chart.tsx` — shadcn/ui chart wrapper (Recharts integration)
+- `table.tsx` — shadcn/ui table component
+- `tabs.tsx` — shadcn/ui tabs component
+- `progress.tsx` — shadcn/ui progress bar
+- `skeleton.tsx` — loading skeletons
+
+---
+
+## What Phase 5 Delivers
+
+1. **Dashboard wired to `/api/dashboard`** — server-computed metrics, no more client-side filtering
+2. **Test detail page** (`/tests/:id`) — run history table, response time chart, uptime card, incidents
+3. **Tests page improvements** — "Run Now" button, clickable test cards linking to detail page
+4. **Sidebar update** — no new items needed (test detail is a sub-route of Tests)
+
+---
+
+## Page Specifications
+
+### Page 1: Dashboard (`/`) — UPDATE
+
+**Data source:** `GET /api/dashboard` (replaces `GET /api/tests`)
+
+**Layout:**
+```
+┌──────────────────────────────────────────────────┐
+│ Dashboard                                         │
+│ Overview of your test runs and system status       │
+├──────────┬──────────┬──────────┬─────────┬───────┤
+│  Total   │  Active  │ Passing  │ Failing │Pending│
+│    5     │    4     │    3     │    1    │   1   │
+├──────────┴──────────┴──────────┴─────────┴───────┤
+│ Recent Test Runs                                  │
+│ ┌──────────────────────────────────────────────┐  │
+│ │ ✓ Login Flow  — myapp.com — 2 min ago       │  │
+│ │ ✗ Checkout    — shop.com  — 15 min ago      │  │
+│ │ ✓ Homepage    — site.com  — 30 min ago      │  │
+│ └──────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────┘
+```
+
+**Changes from current:**
+- Switch query from `/api/tests` to `/api/dashboard`
+- Add "Active" and "Pending" metric cards (currently only Total/Passing/Failing)
+- Recent runs use `recent_runs` from dashboard response
+- Each recent run card is clickable → navigates to `/tests/{test_id}`
+
+**Implementation:**
+```typescript
+const { data } = useQuery<DashboardData>({
+  queryKey: ["/api/dashboard"],
+  refetchInterval: 30000,
+});
+```
+
+Interface:
+```typescript
+interface DashboardData {
+  total_tests: number;
+  active_tests: number;
+  paused_tests: number;
+  passing: number;
+  failing: number;
+  pending: number;
+  recent_runs: {
+    test_id: string;
+    test_name: string;
+    test_url: string;
+    last_result: string;
+    last_run_at: string;
+  }[];
+}
+```
+
+---
+
+### Page 2: Test Detail (`/tests/:id`) — NEW
+
+**Data sources:**
+- `GET /api/tests/{id}` — test definition (name, URL, goal, schedule, status)
+- `GET /api/tests/{id}/results?limit=20` — run history
+- `GET /api/tests/{id}/timing?limit=30` — response time chart data
+- `GET /api/tests/{id}/uptime` — uptime percentage (24h)
+- `GET /api/tests/{id}/incidents?limit=5` — recent failures
+
+**Layout:**
+```
+┌──────────────────────────────────────────────────┐
+│ ← Back to Tests                                   │
+│ Login Flow                                        │
+│ https://myapp.com/login                           │
+│ [Active] [Passed] [Run Now]  [Edit] [Pause]      │
+├──────────┬───────────────┬───────────────────────┤
+│  Uptime  │  Last Result  │   Avg Response Time   │
+│  95.8%   │    Passed     │      12.3s            │
+│  24h     │    2 min ago  │   last 30 runs        │
+├──────────┴───────────────┴───────────────────────┤
+│                                                    │
+│  Response Time (Recharts area chart)              │
+│  ┌────────────────────────────────────────────┐   │
+│  │     /\      /\                              │   │
+│  │    /  \    /  \    /\                       │   │
+│  │   /    \  /    \  /  \                      │   │
+│  │  /      \/      \/    \                     │   │
+│  └────────────────────────────────────────────┘   │
+│                                                    │
+│  [History]  [Incidents]                  (tabs)   │
+│  ┌────────────────────────────────────────────┐   │
+│  │ Run ID │ Status │ Steps  │ Duration│ Time  │   │
+│  │ a1b2.. │ Passed │  3/3   │  12.3s  │ 2m ago│   │
+│  │ c3d4.. │ Failed │  2/3   │  15.1s  │ 17m   │   │
+│  │ e5f6.. │ Passed │  3/3   │  11.8s  │ 32m   │   │
+│  └────────────────────────────────────────────┘   │
+│                                                    │
+│  Incidents tab:                                   │
+│  ┌────────────────────────────────────────────┐   │
+│  │ Run c3d4 — Step 2 failed: button not found │   │
+│  │ Alert sent: Yes — 17 min ago               │   │
+│  └────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────┘
+```
+
+**Route:** Add `/tests/:id` to `App.tsx`
+
+**Component structure:**
+```
+TestDetailPage
+  ├── TestHeader (name, URL, badges, action buttons)
+  ├── MetricCards (uptime, last result, avg response time)
+  ├── ResponseTimeChart (recharts AreaChart)
+  └── Tabs
+       ├── HistoryTab (table of run results)
+       └── IncidentsTab (list of failure records)
+```
+
+**Response Time Chart:**
+Use recharts `AreaChart` with the shadcn/ui `chart.tsx` wrapper:
+```typescript
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid } from "recharts";
+
+// Transform timing data: [{timestamp, duration_ms}] → [{time: "10:30", seconds: 12.3}]
+```
+
+- X-axis: time labels (use `date-fns` `format()`)
+- Y-axis: duration in seconds (divide duration_ms by 1000)
+- Filled area with gradient, themed colors
+- Tooltip showing exact timestamp + duration
+
+**History Table:**
+Using shadcn/ui `table.tsx`:
+```
+| Run ID | Status | Steps | Duration | Triggered By | Time |
+```
+- Status column: pass/fail badge (reuse `ResultBadge` from tests.tsx)
+- Duration: format as seconds with 1 decimal
+- Time: relative time using `date-fns` `formatDistanceToNow()`
+- Clickable rows (stretch — could expand to show step_results)
+
+**Incidents List:**
+Simple card list:
+- Error message
+- Details
+- Alert sent badge (yes/no)
+- Timestamp
+
+**Action buttons in header:**
+- "Run Now" — calls `POST /api/tests/{id}/run`, shows loading spinner, refreshes results on completion
+- "Edit" — opens edit dialog (reuse from tests.tsx, or link to tests page)
+- "Pause/Resume" — toggle button
+
+---
+
+### Page 3: Tests (`/tests`) — UPDATE
+
+**Changes:**
+
+1. **Add "Run Now" button** to each test card:
+   - Icon button (Play icon) next to the existing pause/edit/delete buttons
+   - Calls `POST /api/tests/{id}/run`
+   - Shows loading spinner while running
+   - Invalidates `/api/tests` query on completion so `last_result` updates
+
+2. **Make test cards clickable** → navigate to `/tests/{id}`:
+   - Clicking the card body (not action buttons) navigates to detail page
+   - Use wouter `Link` or `useLocation` for navigation
+
+3. **Add run count or uptime hint** (optional):
+   - Small text showing "95% uptime" or "12 runs" under the schedule label
+   - This would require an additional API call or adding data to the list response
+
+---
+
+## File Changes
+
+### New Files
+
+| File | Description |
+|------|-------------|
+| `client/src/pages/test-detail.tsx` | Test detail page with chart, history table, incidents |
+
+### Updated Files
+
+| File | Changes |
+|------|---------|
+| `client/src/App.tsx` | Add `/tests/:id` route pointing to `TestDetailPage` |
+| `client/src/pages/dashboard.tsx` | Switch to `/api/dashboard`, add metric cards, clickable recent runs |
+| `client/src/pages/tests.tsx` | Add Run Now button, make cards clickable/linkable to detail page |
+
+---
+
+## Implementation Order
+
+| Step | Task | Time |
+|------|------|------|
+| 1 | Create `test-detail.tsx` — basic layout with test header + metric cards | 8 min |
+| 2 | Add response time chart using recharts + shadcn chart wrapper | 10 min |
+| 3 | Add history table (tabs component + table) | 8 min |
+| 4 | Add incidents tab | 5 min |
+| 5 | Add route in `App.tsx` | 1 min |
+| 6 | Update `dashboard.tsx` — wire to `/api/dashboard`, clickable recent runs | 8 min |
+| 7 | Update `tests.tsx` — Run Now button + clickable cards | 5 min |
+| 8 | Test all pages with real data | 5 min |
+| | **Total** | **~50 min** |
+
+---
+
+## Data Fetching Pattern
+
+All queries follow the existing pattern in the codebase:
+
+```typescript
+// Test detail — fetch all data in parallel
+const { data: test } = useQuery({ queryKey: [`/api/tests/${id}`] });
+const { data: results } = useQuery({ queryKey: [`/api/tests/${id}/results`] });
+const { data: timing } = useQuery({ queryKey: [`/api/tests/${id}/timing`] });
+const { data: uptime } = useQuery({ queryKey: [`/api/tests/${id}/uptime`] });
+const { data: incidents } = useQuery({ queryKey: [`/api/tests/${id}/incidents`] });
+
+// Run Now mutation
+const runMutation = useMutation({
+  mutationFn: () => apiRequest("POST", `/api/tests/${id}/run`),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: [`/api/tests/${id}/results`] });
+    queryClient.invalidateQueries({ queryKey: [`/api/tests/${id}/timing`] });
+    queryClient.invalidateQueries({ queryKey: [`/api/tests/${id}/uptime`] });
+    queryClient.invalidateQueries({ queryKey: ["/api/tests"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+  },
+});
+```
+
+---
+
+## Shared Components to Extract
+
+To avoid duplicating code between `tests.tsx` and `test-detail.tsx`:
+
+1. **`StatusBadge`** — already in tests.tsx, move to a shared file or just import
+2. **`ResultBadge`** — same, already in tests.tsx
+3. **`scheduleLabel()`** — utility function, already in tests.tsx
+
+Option: Extract these to `client/src/components/test-badges.tsx` or keep them in tests.tsx and import. Either works — Replit can decide.
+
+---
+
+## Testing Plan
+
+### Test 1: Dashboard
+1. Run a few tests (mix of pass/fail) via the Tests page
+2. Navigate to Dashboard — verify metrics match (total, active, passing, failing, pending)
+3. Recent runs section should show latest runs with correct status
+4. Click a recent run → should navigate to test detail page
+
+### Test 2: Test Detail Page
+1. Navigate to a test that has run history (`/tests/{id}`)
+2. Verify: test name, URL, status badge, result badge shown in header
+3. Metric cards: uptime %, last result, avg response time
+4. Response time chart renders with data points
+5. History tab: table shows all runs with correct status/duration/time
+6. Incidents tab: shows failures (if any)
+7. "Run Now" button triggers execution, results refresh after completion
+
+### Test 3: Tests Page
+1. Verify "Run Now" button appears on each test card
+2. Click Run Now → spinner shows → result badge updates on completion
+3. Click test card body → navigates to `/tests/{id}`
+
+### Test 4: Empty States
+1. Navigate to test detail for a test with no runs → appropriate empty states
+2. Dashboard with no tests → existing empty state still works
+3. Incidents tab with no incidents → "No incidents" message
+
+---
+
+## Exit Criteria
+
+- [ ] Dashboard wired to `/api/dashboard` with server-computed metrics
+- [ ] Test detail page shows run history, response time chart, uptime, incidents
+- [ ] Response time chart renders correctly with recharts
+- [ ] History table shows paginated run results
+- [ ] Incidents tab shows recent failures
+- [ ] "Run Now" button works on both Tests page and Test Detail page
+- [ ] Test cards on Tests page link to detail page
+- [ ] Recent runs on Dashboard link to detail page
+- [ ] Loading states and empty states handled gracefully
+
+---
+
+## What This Unlocks
+
+With Phase 5 complete, the app has a full user journey:
+1. Create a test (Tests page)
+2. Run it manually or wait for QStash cron
+3. See aggregate health (Dashboard)
+4. Drill into a specific test (Test Detail)
+5. View run history, performance trends, failures
+
+Phase 6 (live execution view) would add real-time SSE streaming to the test detail page using the `/api/tests/{id}/live` endpoint already built in Phase 4.
+
+---
+
+## Notes
+
+- **No new npm dependencies needed** — recharts, date-fns, and all shadcn/ui components already installed.
+- **Chart theming**: Use shadcn/ui chart wrapper which auto-handles light/dark mode colors.
+- **Responsive**: All layouts should work on mobile (stack metric cards vertically, table scrolls horizontally).
+- **Refetch intervals**: Test detail queries should refetch every 30s (same as dashboard) to pick up new results from scheduled runs.
+- **URL format for detail page**: Use `/tests/:id` (wouter param syntax). Extract `id` with `useParams()` or wouter's `useRoute()`.

@@ -74,16 +74,25 @@ Test suites have cron expressions (default `*/15 * * * *`). QStash calls `POST /
 
 `backend/services/tinyfish.py` streams SSE from TinyFish's API. Event types: `STREAMING_URL`, `STEP`, `COMPLETE`, `ERROR`. The COMPLETE event contains the JSON result from browser automation.
 
+## Screenshots
+
+`backend/services/screenshot.py` uses a Playwright singleton browser to capture before/after screenshots for each test step. Playwright must be installed (`playwright install chromium`).
+
 ## API Endpoints
 
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /api/health` | Health check for all services |
 | `POST /api/run-test` | Manual pipeline run: `{url, goal}` |
-| `POST /api/callback/{testId}` | QStash callback |
+| `POST /api/callback/{testId}` | QStash callback (validates `upstash-signature`) |
 | `GET/POST /api/tests` | List / Create test suites |
 | `GET/PUT/DELETE /api/tests/{id}` | CRUD single test |
 | `POST /api/tests/{id}/run` | Run saved test through pipeline |
+| `GET /api/tests/{id}/results` | Paginated run results |
+| `GET /api/tests/{id}/results/{runId}` | Single run detail |
+| `GET /api/tests/{id}/timing` | Timing data (paginated) |
+| `GET /api/tests/{id}/uptime` | Uptime metrics over time window |
+| `GET /api/dashboard` | Aggregated dashboard stats |
 | `POST /api/test/{tinyfish,agent,qstash}` | Sanity checks |
 
 ## Frontend
@@ -91,6 +100,7 @@ Test suites have cron expressions (default `*/15 * * * *`). QStash calls `POST /
 - **Router**: Wouter (not React Router). Routes: `/` (dashboard), `/tests`, `/run`, `/settings`
 - **State**: TanStack Query. Dashboard polls `/api/tests` every 30s
 - **UI**: shadcn/ui with custom `hover-elevate` and `active-elevate-2` utilities on Button/Select/AlertDialog. Do NOT run `npx shadcn@latest add --overwrite` — it will replace custom utilities
+- **Path aliases**: `@/*` → `client/src/*`, `@shared/*` → `shared/*` (configured in tsconfig.json and vite.config.ts)
 
 ## Windows Compatibility
 
@@ -100,9 +110,14 @@ Test suites have cron expressions (default `*/15 * * * *`). QStash calls `POST /
 
 ```
 UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
-QSTASH_TOKEN, QSTASH_URL (optional)
+QSTASH_TOKEN, QSTASH_CURRENT_SIGNING_KEY, QSTASH_NEXT_SIGNING_KEY
 TINYFISH_API_KEY
 ANTHROPIC_API_KEY
 REPLIT_DEV_DOMAIN (optional, for Replit public URL)
 PUBLIC_URL (fallback: http://localhost:5000)
 ```
+
+## Notes
+
+- No unit/integration test suite exists yet. There is no test runner configured.
+- Express auto-restarts the FastAPI child process if it crashes (2s delay).

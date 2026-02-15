@@ -1,0 +1,352 @@
+# Phase 4: Results & Metrics API — Implementation Plan
+
+**Goal:** Endpoints to query test history, timing, and uptime for the frontend. This is the **read side** — Phase 3 writes the data, Phase 4 exposes it.
+
+**Time estimate:** ~30 minutes for Replit agent
+
+---
+
+## What Exists Today (after Phase 3)
+
+| Redis Key | Data Type | What's Stored |
+|-----------|-----------|---------------|
+| `results:{test_id}` | Sorted Set | JSON RunRecord per run (score=timestamp) |
+| `timing:{test_id}` | Sorted Set | duration_ms per run (score=timestamp) |
+| `events:{test_id}` | Stream | Step-by-step execution log entries |
+| `incidents:{test_id}` | List | JSON IncidentRecord per failure (LPUSH, newest first) |
+| `test:{test_id}` | Hash | `last_result`, `last_run_at` updated per run |
+
+**Frontend currently:**
+- Dashboard (`/`) — fetches `/api/tests`, computes passing/failing client-side from `last_result` field
+- Tests page (`/tests`) — shows test cards with last_result badge, no history
+- No test detail page exists yet
+- No way to see run history, timing, or incidents
+
+---
+
+## What Phase 4 Delivers
+
+1. **Results history endpoint** — paginated run history per test
+2. **Timing endpoint** — response time series for charts
+3. **Uptime endpoint** — uptime percentage over configurable window
+4. **Incidents endpoint** — recent failures per test
+5. **Dashboard endpoint** — server-computed aggregate metrics
+6. **Live events SSE endpoint** — real-time execution stream (for Phase 6)
+
+---
+
+## API Specification
+
+### 1. `GET /api/tests/{test_id}/results`
+
+Paginated run history from `results:{test_id}` Sorted Set.
+
+**Query params:**
+- `limit` (int, default 20, max 100) — number of results
+- `offset` (int, default 0) — skip N most recent results
+
+**Response:**
+```json
+{
+  "test_id": "abc12345",
+  "results": [
+    {
+      "run_id": "a1b2c3d4",
+      "passed": true,
+      "duration_ms": 12340,
+      "steps_passed": 3,
+      "steps_total": 3,
+      "details": "All steps passed.",
+      "step_results": [...],
+      "error": null,
+      "triggered_by": "qstash",
+      "started_at": "2026-02-14T10:00:00Z",
+      "completed_at": "2026-02-14T10:00:12Z"
+    }
+  ],
+  "total": 47,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+**Redis commands:**
+- `ZCARD results:{test_id}` → total count
+- `ZREVRANGEBYSCORE results:{test_id} +inf -inf LIMIT offset limit` → newest first
+
+---
+
+### 2. `GET /api/tests/{test_id}/timing`
+
+Response time series for charts. Returns the last N data points.
+
+**Query params:**
+- `limit` (int, default 50, max 200) — number of data points
+
+**Response:**
+```json
+{
+  "test_id": "abc12345",
+  "timing": [
+    { "timestamp": "2026-02-14T10:00:00Z", "duration_ms": 12340 },
+    { "timestamp": "2026-02-14T09:45:00Z", "duration_ms": 11200 }
+  ],
+  "total": 47
+}
+```
+
+**Redis commands:**
+- `ZCARD timing:{test_id}` → total count
+- `ZREVRANGE timing:{test_id} 0 (limit-1) WITHSCORES` → newest first, score is timestamp
+
+**Note:** The timing Sorted Set stores `duration_ms` as the member and `timestamp` as the score. Since members must be unique in a Sorted Set and two runs could have the same duration, prepend the run timestamp or run_id to the member to guarantee uniqueness. **This is a fix needed in `result_store.py`** — change from `str(final_result.duration_ms)` to `f"{final_result.duration_ms}:{run_id}"` and parse it back when reading.
+
+---
+
+### 3. `GET /api/tests/{test_id}/uptime`
+
+Uptime percentage calculated from results over a time window.
+
+**Query params:**
+- `hours` (int, default 24, max 720) — time window in hours
+
+**Response:**
+```json
+{
+  "test_id": "abc12345",
+  "uptime_pct": 95.8,
+  "total_runs": 24,
+  "passed_runs": 23,
+  "failed_runs": 1,
+  "window_hours": 24
+}
+```
+
+**Redis commands:**
+- Calculate `min_timestamp = now - (hours * 3600)`
+- `ZRANGEBYSCORE results:{test_id} min_timestamp +inf` → all results in window
+- Parse each JSON, count passed vs total
+- `uptime_pct = (passed / total) * 100` (or 100.0 if no runs)
+
+---
+
+### 4. `GET /api/tests/{test_id}/incidents`
+
+Recent failure incidents.
+
+**Query params:**
+- `limit` (int, default 10, max 50)
+
+**Response:**
+```json
+{
+  "test_id": "abc12345",
+  "incidents": [
+    {
+      "run_id": "a1b2c3d4",
+      "test_id": "abc12345",
+      "error": "Step 2 failed: button not found",
+      "details": "2 of 3 steps passed.",
+      "started_at": "2026-02-14T10:00:00Z",
+      "alert_sent": true
+    }
+  ],
+  "total": 3
+}
+```
+
+**Redis commands:**
+- `LLEN incidents:{test_id}` → total count
+- `LRANGE incidents:{test_id} 0 (limit-1)` → newest first (LPUSH order)
+
+---
+
+### 5. `GET /api/dashboard`
+
+Server-computed aggregate metrics. Replaces the current client-side computation in `dashboard.tsx`.
+
+**Response:**
+```json
+{
+  "total_tests": 5,
+  "active_tests": 4,
+  "paused_tests": 1,
+  "passing": 3,
+  "failing": 1,
+  "pending": 1,
+  "recent_runs": [
+    {
+      "test_id": "abc12345",
+      "test_name": "Login Flow",
+      "test_url": "https://myapp.com/login",
+      "last_result": "passed",
+      "last_run_at": "2026-02-14T10:00:00Z"
+    }
+  ]
+}
+```
+
+**Implementation:** Reuses `list_test_suites()` from `test_suite.py`, computes counts server-side, returns top 5 recent runs. This is a thin wrapper — keeps the dashboard fast with a single API call.
+
+---
+
+### 6. `GET /api/tests/{test_id}/live`
+
+SSE (Server-Sent Events) endpoint streaming from Redis Stream. Used by Phase 6 live view, but we expose the endpoint now.
+
+**Response:** `text/event-stream`
+```
+data: {"type": "plan_start", "message": "Planning test for https://example.com", "timestamp": "..."}
+
+data: {"type": "plan_complete", "message": "Plan created: 3 steps", "timestamp": "..."}
+
+data: {"type": "step_complete", "message": "Step 1 passed", "step_number": "1", "passed": "true", "timestamp": "..."}
+```
+
+**Implementation:**
+- Use FastAPI `StreamingResponse` with `text/event-stream` content type
+- On connect: replay recent events from Stream (`XRANGE events:{test_id} - + COUNT 50`)
+- Then poll for new events every 1 second (`XRANGE events:{test_id} {last_id} +`)
+- Timeout after 5 minutes of no new events (send keepalive comments every 15s)
+- Client can reconnect with `Last-Event-ID` header
+
+---
+
+## Implementation Plan
+
+### File 1: `backend/api/results.py` (NEW)
+
+New FastAPI router with all 6 endpoints. Keep it separate from `api/tests.py` to avoid bloating that file.
+
+```python
+from fastapi import APIRouter, Query
+from fastapi.responses import JSONResponse, StreamingResponse
+
+router = APIRouter(prefix="/api", tags=["results"])
+
+@router.get("/tests/{test_id}/results")
+async def get_results(test_id: str, limit: int = Query(20, le=100), offset: int = Query(0, ge=0)):
+    ...
+
+@router.get("/tests/{test_id}/timing")
+async def get_timing(test_id: str, limit: int = Query(50, le=200)):
+    ...
+
+@router.get("/tests/{test_id}/uptime")
+async def get_uptime(test_id: str, hours: int = Query(24, le=720)):
+    ...
+
+@router.get("/tests/{test_id}/incidents")
+async def get_incidents(test_id: str, limit: int = Query(10, le=50)):
+    ...
+
+@router.get("/dashboard")
+async def get_dashboard():
+    ...
+
+@router.get("/tests/{test_id}/live")
+async def get_live_events(test_id: str):
+    ...
+```
+
+### File 2: Update `backend/main.py`
+
+Mount the new router:
+```python
+from api.results import router as results_router
+app.include_router(results_router)
+```
+
+### File 3: Fix `backend/services/result_store.py`
+
+Fix the timing Sorted Set uniqueness issue. Change:
+```python
+redis.zadd(f"timing:{test_id}", {str(final_result.duration_ms): timestamp})
+```
+To:
+```python
+redis.zadd(f"timing:{test_id}", {f"{final_result.duration_ms}:{run_id}": timestamp})
+```
+
+This ensures two runs with the same duration don't overwrite each other.
+
+---
+
+## Implementation Order
+
+| Step | Task | Time |
+|------|------|------|
+| 1 | Fix timing uniqueness in `result_store.py` | 2 min |
+| 2 | Create `api/results.py` with results endpoint | 5 min |
+| 3 | Add timing endpoint | 5 min |
+| 4 | Add uptime endpoint | 5 min |
+| 5 | Add incidents endpoint | 3 min |
+| 6 | Add dashboard endpoint | 5 min |
+| 7 | Add SSE live events endpoint | 8 min |
+| 8 | Mount router in `main.py` | 1 min |
+| 9 | Test all endpoints via Swagger UI | 5 min |
+| | **Total** | **~35 min** |
+
+---
+
+## Testing Plan
+
+### Test 1: Results History
+1. Run a test 2-3 times manually via `POST /api/tests/{id}/run`
+2. `GET /api/tests/{id}/results` → should return all runs, newest first
+3. `GET /api/tests/{id}/results?limit=1` → should return only 1 result
+4. `GET /api/tests/{id}/results?offset=1&limit=1` → should return the 2nd result
+
+### Test 2: Timing Data
+1. After running tests above, `GET /api/tests/{id}/timing`
+2. Should return duration_ms + timestamp pairs, newest first
+3. Verify no duplicate entries even if two runs have similar durations
+
+### Test 3: Uptime Calculation
+1. `GET /api/tests/{id}/uptime` → should return correct pass/fail ratio
+2. `GET /api/tests/{id}/uptime?hours=1` → narrower window
+
+### Test 4: Incidents
+1. Run a test that will fail (bad goal like "Find button labeled XYZNONEXISTENT")
+2. `GET /api/tests/{id}/incidents` → should show the failure
+
+### Test 5: Dashboard
+1. `GET /api/dashboard` → should return aggregate counts matching what the frontend shows
+2. `recent_runs` should be sorted by `last_run_at` descending
+
+### Test 6: SSE Live Events
+1. Open `GET /api/tests/{id}/live` in browser or curl
+2. In another tab, trigger `POST /api/tests/{id}/run`
+3. Should see events streaming in real-time as the pipeline executes
+
+---
+
+## Exit Criteria
+
+- [ ] `GET /api/tests/{id}/results` returns paginated run history
+- [ ] `GET /api/tests/{id}/timing` returns time series data
+- [ ] `GET /api/tests/{id}/uptime` returns correct uptime percentage
+- [ ] `GET /api/tests/{id}/incidents` returns recent failures
+- [ ] `GET /api/dashboard` returns aggregate metrics
+- [ ] `GET /api/tests/{id}/live` streams SSE events in real-time
+- [ ] All endpoints accessible via Swagger UI (`/docs`)
+- [ ] Timing Sorted Set handles duplicate durations correctly
+
+---
+
+## What This Unlocks
+
+With Phase 4 complete, the frontend (Phase 5) can build:
+- **Test detail page** with results history table, response time chart, incident log
+- **Dashboard** wired to `/api/dashboard` instead of client-side computation
+- **Live execution view** (Phase 6) consuming the SSE endpoint
+
+---
+
+## Notes
+
+- **No authentication** on these endpoints for hackathon. All endpoints are public.
+- **SSE keepalive**: Send `:\n\n` comment every 15 seconds to prevent proxy timeouts.
+- **Pagination**: Using offset-based pagination (simple). For production, cursor-based with run_id would be better.
+- **Dashboard endpoint**: Could be computed client-side (already is), but server-side is cleaner and avoids fetching all test data to the browser.
+- **CORS**: Already configured as `allow_origins=["*"]` in main.py, SSE should work from the frontend.
