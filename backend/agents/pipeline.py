@@ -1,13 +1,22 @@
+import json
 import time
 from models import TestPlan, BrowserResult, TestResult
 from agents.planner import create_plan
 from agents.browser import execute_test
 from agents.evaluator import evaluate_test
 from services.result_store import log_event
+from services.config import get_redis
 
 
 async def run_test(url: str, goal: str, test_id: str | None = None) -> tuple[TestPlan, BrowserResult, TestResult]:
     start = time.time()
+
+    if test_id:
+        try:
+            redis = get_redis()
+            redis.delete(f"events:{test_id}")
+        except Exception as e:
+            print(f"[EventLog] Failed to clear events stream: {e}")
 
     def _log(event_type: str, message: str, **kwargs):
         if test_id:
@@ -21,11 +30,15 @@ async def run_test(url: str, goal: str, test_id: str | None = None) -> tuple[Tes
         print(f"[Planner] Creating test plan for: {goal}")
         plan = await create_plan(url, goal)
         print(f"[Planner] {plan.total_steps} steps planned")
-        _log("plan_complete", f"Plan created: {plan.total_steps} steps")
+        steps_json = json.dumps([{"step_number": s.step_number, "description": s.description} for s in plan.steps])
+        _log("plan_complete", f"Plan created: {plan.total_steps} steps", steps=steps_json)
 
         _log("browser_start", "Executing test with TinyFish")
         print(f"[Browser] Executing test with TinyFish...")
         browser_result = await execute_test(url, plan.tinyfish_goal)
+
+        if browser_result.streaming_url:
+            _log("browser_preview", "Browser preview available", streaming_url=browser_result.streaming_url)
 
         for sr in browser_result.step_results:
             status = "+" if sr.passed else "x"

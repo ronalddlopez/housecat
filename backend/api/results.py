@@ -168,12 +168,21 @@ async def get_live_events(test_id: str, request: Request):
         last_id = resume_id if resume_id else "0-0"
 
         if resume_id:
-            existing = redis.xrange(f"events:{test_id}", min=f"({resume_id}", max="+", count=50)
+            existing = redis.xrange(f"events:{test_id}", f"({resume_id}", "+", count=50)
         else:
-            existing = redis.xrange(f"events:{test_id}", min="-", max="+", count=50)
+            existing = redis.xrange(f"events:{test_id}", "-", "+", count=50)
 
-        for entry_id, fields in existing:
-            data = json.dumps(fields)
+        def fields_to_dict(fields):
+            if isinstance(fields, dict):
+                return fields
+            d = {}
+            for i in range(0, len(fields) - 1, 2):
+                d[fields[i]] = fields[i + 1]
+            return d
+
+        for entry in existing:
+            entry_id, fields = entry[0], entry[1]
+            data = json.dumps(fields_to_dict(fields))
             yield f"id: {entry_id}\ndata: {data}\n\n"
             last_id = entry_id
 
@@ -185,12 +194,13 @@ async def get_live_events(test_id: str, request: Request):
             if await request.is_disconnected():
                 break
 
-            new_entries = redis.xrange(f"events:{test_id}", min=f"({last_id}", max="+", count=20)
+            new_entries = redis.xrange(f"events:{test_id}", f"({last_id}", "+", count=20)
 
             if new_entries:
                 idle_seconds = 0
-                for entry_id, fields in new_entries:
-                    data = json.dumps(fields)
+                for entry in new_entries:
+                    entry_id, fields = entry[0], entry[1]
+                    data = json.dumps(fields_to_dict(fields))
                     yield f"id: {entry_id}\ndata: {data}\n\n"
                     last_id = entry_id
             else:

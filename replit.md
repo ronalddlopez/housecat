@@ -99,11 +99,12 @@ CLI usage: `python -m backend.run_pipeline "https://example.com" "Verify the pag
 ## Frontend Pages
 - `/` — Dashboard: server-computed metrics from /api/dashboard (total, active, passing, failing, pending) + clickable recent test runs
 - `/tests` — Tests: CRUD for test suites (create, edit, delete, pause/resume) + Run Now button + clickable cards linking to detail
-- `/tests/:id` — Test Detail: run history table, response time chart (recharts), uptime card, incidents tab, Run Now + Pause/Resume
+- `/tests/:id` — Test Detail: live execution panel (SSE), response time chart (recharts), uptime card, history table, incidents tab, Run Now + Pause/Resume
 - `/run` — Run Test: URL + goal form → triggers Planner → Browser → Evaluator pipeline
 - `/settings` — Settings: service health cards + sanity check buttons
 
 ## Recent Changes
+- 2026-02-15: Phase 6 — Live Execution View: LiveExecutionPanel with SSE streaming, phase indicator, step tracker, browser preview iframe, event log, auto-dismiss
 - 2026-02-15: Phase 5 — Frontend: Dashboard wired to /api/dashboard, new test detail page with chart/history/incidents, tests page Run Now button + clickable cards
 - 2026-02-15: Phase 4 — Results & Metrics API: 6 new endpoints (results history, timing, uptime, incidents, dashboard, SSE live events) in backend/api/results.py
 - 2026-02-15: Phase 3 — QStash callback handler, result persistence (Sorted Sets), event logging (Streams), incident tracking (Lists), alert webhooks on failure

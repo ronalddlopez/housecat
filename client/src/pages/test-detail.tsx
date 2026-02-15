@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useRoute, Link } from "wouter";
@@ -31,6 +32,7 @@ import {
   Bell,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
+import { LiveExecutionPanel } from "@/components/live-execution-panel";
 
 interface TestSuite {
   id: string;
@@ -158,6 +160,7 @@ const chartConfig = {
 export default function TestDetailPage() {
   const [, params] = useRoute("/tests/:id");
   const id = params?.id;
+  const [runTrigger, setRunTrigger] = useState(0);
 
   const { data: test, isLoading: testLoading } = useQuery<TestSuite>({
     queryKey: ["/api/tests", id],
@@ -279,7 +282,10 @@ export default function TestDetailPage() {
         </p>
         <div className="flex items-center gap-2 flex-wrap">
           <Button
-            onClick={() => runMutation.mutate()}
+            onClick={() => {
+              setRunTrigger((t) => t + 1);
+              runMutation.mutate();
+            }}
             disabled={runMutation.isPending}
             data-testid="button-run-now"
           >
@@ -368,6 +374,20 @@ export default function TestDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      <LiveExecutionPanel
+        testId={id!}
+        runTrigger={runTrigger}
+        onComplete={() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/tests", id] });
+          queryClient.invalidateQueries({ queryKey: ["/api/tests"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/tests", id, "results"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/tests", id, "timing"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/tests", id, "uptime"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/tests", id, "incidents"] });
+        }}
+      />
 
       {chartData.length > 1 && (
         <Card data-testid="card-chart">
