@@ -83,6 +83,10 @@ CLI usage: `python -m backend.run_pipeline "https://example.com" "Verify the pag
 - `TINYFISH_API_KEY` - TinyFish API key
 - `ANTHROPIC_API_KEY` - Anthropic API key
 
+## User Preferences
+- **Windows compatibility**: `server/index.ts` uses a cross-platform `getPythonCommand()` helper — `py -3.12` on Windows, `python3` on Linux/macOS. Do NOT overwrite this with a hardcoded command. If installing shadcn components or making other changes, never modify the existing `server/index.ts`, `client/src/components/ui/button.tsx`, `client/src/components/ui/select.tsx`, or `client/src/components/ui/alert-dialog.tsx` files unless explicitly needed for the task.
+- **UI component safety**: The project uses custom `hover-elevate` / `active-elevate-2` utilities and `min-h-*` sizing in Button, Select, and AlertDialog. Running `npx shadcn@latest add --overwrite` will replace these customizations — avoid `--overwrite` or manually restore after.
+
 ## How It Works (Dev Mode)
 1. Express starts FastAPI as a child process on port 8000
 2. Express starts Vite dev server on port 5000
