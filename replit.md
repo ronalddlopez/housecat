@@ -95,6 +95,7 @@ CLI usage: `python -m backend.run_pipeline "https://example.com" "Verify the pag
 5. Express body-parsing middleware skips `/api` routes so the proxy can forward raw bodies
 
 ## Recent Changes
+- 2026-02-15: Phase 3 — QStash callback handler, result persistence (Sorted Sets), event logging (Streams), incident tracking (Lists), alert webhooks on failure
 - 2026-02-14: Phase 2 — Test Suite CRUD API backed by Redis + QStash cron scheduling + Tests page UI with create/edit/delete
 - 2026-02-14: Phase 2 — Dashboard wired to real metrics from /api/tests
 - 2026-02-14: Phase 1.5 UI reorganization — sidebar navigation + 4 pages (Dashboard, Tests, Run Test, Settings)

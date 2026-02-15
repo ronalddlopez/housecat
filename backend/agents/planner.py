@@ -1,5 +1,5 @@
 from pydantic_ai import Agent, UsageLimits
-from backend.models import TestPlan
+from models import TestPlan
 
 planner_agent = Agent(
     'anthropic:claude-haiku-4-5-20251001',

@@ -1,0 +1,47 @@
+In `@attached_assets/phase-3-plan_1771116250081.md`:
+- Around line 36-42: The fenced code blocks containing the Redis schema lines
+(results:{test_id}, timing:{test_id}, events:{test_id}, incidents:{test_id},
+test:{test_id}), the event examples (type=plan_start … type=error), and the
+`httpx` block are missing language identifiers and trigger MD040; update each
+triple-backtick fence to include a language (prefer `text` or a more specific
+language if appropriate) so the fences become ```text (or ```ini/```yaml if more
+accurate) for those blocks to satisfy markdownlint and improve rendering.
+
+In `@backend/main.py`:
+- Around line 91-100: The current update assumes the incident to mark alert_sent
+is at index 0, which can be wrong for overlapping runs; instead, after
+send_alert_webhook succeeds (in the block that checks final_result.passed and
+calls send_alert_webhook), fetch the full incidents list with get_redis().lrange
+for key f"incidents:{test_id}", iterate over each entry, parse JSON, find the
+incident whose run_id matches run_record["run_id"] (or run_record.run_id), set
+incident["alert_sent"]=True and write it back with lset at that specific index;
+use the same symbols seen in the diff (final_result.passed, send_alert_webhook,
+get_redis, run_record, test_id, lrange/lset) to locate and modify the code.
+- Around line 59-71: The callback is unauthenticated; modify the qstash_callback
+handler to extract the Upstash-Signature header and raw request body (use
+Request and Header), instantiate qstash.Receiver with QSTASH_CURRENT_SIGNING_KEY
+and QSTASH_NEXT_SIGNING_KEY from env, and call receiver.verify(body=body,
+signature=upstash_signature, url=str(request.url)) before proceeding; if the
+header is missing return HTTP 400 and if verification fails return HTTP 401 (use
+HTTPException) so only verified QStash requests run get_test_suite, run_test,
+and Redis writes.
+
+In `@backend/services/alert.py`:
+- Around line 27-36: The except block in the webhook sender currently prints the
+full webhook_url and catches Exception broadly; change it to catch only
+httpx.HTTPError (from httpx) to limit to network/protocol errors, and replace
+the printed full URL with a sanitized version that keeps only the scheme and
+domain (e.g., build sanitized_url from urllib.parse.urlparse(webhook_url).scheme
++ "://" + parsed.netloc) so path and query are removed; log or print a message
+using that sanitized_url and the exception, and ensure the handler returns False
+on error instead of falling through.
+
+In `@backend/services/result_store.py`:
+- Around line 27-31: The ZSET entry for timing uses the duration as the member
+which causes duplicates to overwrite earlier samples; change the redis.zadd call
+that writes to the "timing:{test_id}" key so the member is unique (e.g.,
+concatenate the duration with the run id from the run_record or include
+run_record['run_id'] / run_record.get('id') in the member string or JSON) while
+keeping the score as timestamp, ensuring every run (final_result.duration_ms) is
+preserved; update the member creation used in the redis.zadd for
+timing:{test_id} accordingly.

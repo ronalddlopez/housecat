@@ -1,3 +1,4 @@
+import path from "path";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
@@ -71,9 +72,9 @@ app.use((req, res, next) => {
 function getPythonCommand(): [string, string[]] {
   const isWindows = process.platform === "win32";
   if (isWindows) {
-    return ["py", ["-3.12", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]];
+    return ["py", ["-3.12", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]];
   }
-  return ["python3", ["-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]];
+  return ["python3", ["-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]];
 }
 
 function startFastAPI() {
@@ -81,6 +82,7 @@ function startFastAPI() {
   const fastapi = spawn(cmd, args, {
     stdio: "inherit",
     env: { ...process.env },
+    cwd: path.join(process.cwd(), "backend"),
   });
 
   fastapi.on("error", (err) => {

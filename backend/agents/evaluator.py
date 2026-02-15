@@ -1,6 +1,6 @@
 import json
 from pydantic_ai import Agent, UsageLimits
-from backend.models import TestResult
+from models import TestResult
 
 evaluator_agent = Agent(
     'anthropic:claude-haiku-4-5-20251001',

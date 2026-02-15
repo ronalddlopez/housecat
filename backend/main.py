@@ -5,8 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 
-from backend.api.tests import router as tests_router
-from backend.services.config import get_redis, get_qstash, get_public_url
+from api.tests import router as tests_router
+from services.config import get_redis, get_qstash, get_public_url
 
 app = FastAPI(title="HouseCat", version="0.1.0")
 app.include_router(tests_router)
@@ -57,14 +57,88 @@ async def health():
 
 
 @app.post("/api/callback/{test_id}")
-async def qstash_callback(test_id: str):
-    print(f"QStash callback received for test: {test_id}")
-    return {"status": "received", "testId": test_id}
+async def qstash_callback(test_id: str, request: Request):
+    from services.test_suite import get_test_suite
+    from services.result_store import store_run_result, log_event
+    from services.alert import send_alert_webhook
+    from agents.pipeline import run_test
+    from datetime import datetime, timezone
+    from qstash import Receiver
+
+    upstash_signature = request.headers.get("upstash-signature", "")
+    if not upstash_signature:
+        return JSONResponse(content={"error": "Missing Upstash-Signature header"}, status_code=400)
+
+    body = await request.body()
+    try:
+        receiver = Receiver(
+            current_signing_key=os.environ.get("QSTASH_CURRENT_SIGNING_KEY", ""),
+            next_signing_key=os.environ.get("QSTASH_NEXT_SIGNING_KEY", ""),
+        )
+        receiver.verify(body=body.decode(), signature=upstash_signature, url=str(request.url))
+    except Exception:
+        return JSONResponse(content={"error": "Invalid signature"}, status_code=401)
+
+    print(f"QStash callback verified for test: {test_id}")
+
+    test = get_test_suite(test_id)
+    if not test:
+        return JSONResponse(content={"error": "Test not found"}, status_code=404)
+
+    if test.get("status") == "paused":
+        return {"status": "skipped", "reason": "test is paused"}
+
+    try:
+        plan, browser_result, final_result = await run_test(
+            url=test["url"],
+            goal=test["goal"],
+            test_id=test_id,
+        )
+
+        run_record = store_run_result(
+            test_id=test_id,
+            final_result=final_result,
+            plan=plan,
+            browser_result=browser_result,
+            triggered_by="qstash",
+        )
+
+        if not final_result.passed and test.get("alert_webhook"):
+            alert_sent = await send_alert_webhook(test["alert_webhook"], test, run_record)
+            if alert_sent:
+                redis = get_redis()
+                import json as _json
+                incidents = redis.lrange(f"incidents:{test_id}", 0, -1)
+                for idx, raw in enumerate(incidents):
+                    incident = _json.loads(raw)
+                    if incident.get("run_id") == run_record["run_id"]:
+                        incident["alert_sent"] = True
+                        redis.lset(f"incidents:{test_id}", idx, _json.dumps(incident))
+                        break
+
+        return {
+            "status": "completed",
+            "test_id": test_id,
+            "passed": final_result.passed,
+            "run_id": run_record["run_id"],
+        }
+
+    except Exception as e:
+        log_event(test_id, "error", f"Pipeline error: {str(e)}")
+        redis = get_redis()
+        redis.hset(f"test:{test_id}", values={
+            "last_result": "error",
+            "last_run_at": datetime.now(timezone.utc).isoformat(),
+        })
+        return JSONResponse(
+            content={"error": str(e), "test_id": test_id},
+            status_code=500,
+        )
 
 
 @app.post("/api/run-test")
 async def run_test_manual(request: Request):
-    from backend.agents.pipeline import run_test
+    from agents.pipeline import run_test
 
     try:
         body = await request.json()
@@ -96,7 +170,7 @@ async def test_tinyfish():
         return {"success": False, "error": "TINYFISH_API_KEY not set"}
 
     try:
-        from backend.services.tinyfish import call_tinyfish
+        from services.tinyfish import call_tinyfish
         result = await call_tinyfish(
             "https://example.com",
             'What is the main heading on this page? Return JSON: {"heading": "..."}. Return valid JSON only.',
