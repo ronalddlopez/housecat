@@ -52,12 +52,19 @@ class TestResult(BaseModel):
     error: str | None = Field(default=None, description="Error details if failed")
 
 
+class Variable(BaseModel):
+    name: str = Field(min_length=1, max_length=50, pattern="^[a-zA-Z0-9_]+$", description="Variable name (alphanumeric + underscore)")
+    value: str = Field(max_length=500, description="Variable value")
+    hidden: bool = Field(default=False, description="Whether to mask the value in the UI")
+
+
 class CreateTestSuite(BaseModel):
     name: str = Field(min_length=1, max_length=100, description="Test suite name")
     url: str = Field(description="Target URL to test")
     goal: str = Field(min_length=1, description="Natural language test description")
     schedule: str = Field(default="*/15 * * * *", description="Cron expression for scheduling")
     alert_webhook: str | None = Field(default=None, description="Webhook URL for failure alerts")
+    variables: list[Variable] = Field(default_factory=list, description="Per-test variables for {{placeholder}} substitution")
 
 
 class UpdateTestSuite(BaseModel):
@@ -67,6 +74,7 @@ class UpdateTestSuite(BaseModel):
     schedule: str | None = None
     alert_webhook: str | None = None
     status: str | None = Field(default=None, pattern="^(active|paused)$")
+    variables: list[Variable] | None = None
 
 
 class TestSuiteResponse(BaseModel):
@@ -77,6 +85,7 @@ class TestSuiteResponse(BaseModel):
     schedule: str
     schedule_id: str | None = None
     alert_webhook: str | None = None
+    variables: list[Variable] = Field(default_factory=list, description="Per-test variables")
     status: str = "active"
     last_result: str = "pending"
     last_run_at: str | None = None

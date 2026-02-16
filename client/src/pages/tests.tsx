@@ -35,7 +35,7 @@ import {
   Pause,
   RotateCcw,
 } from "lucide-react";
-import { TestForm, FormState, emptyForm, scheduleLabel } from "@/components/test-form";
+import { TestForm, FormState, emptyForm, scheduleLabel, type Variable } from "@/components/test-form";
 
 interface TestSuite {
   id: string;
@@ -45,6 +45,7 @@ interface TestSuite {
   schedule: string;
   schedule_id?: string;
   alert_webhook?: string;
+  variables?: Variable[];
   status: string;
   last_result: string;
   last_run_at?: string;
@@ -180,6 +181,7 @@ export default function TestsPage() {
       goal: t.goal,
       schedule: t.schedule,
       alert_webhook: t.alert_webhook || "",
+      variables: t.variables || [],
     });
     setEditTest(t);
   }

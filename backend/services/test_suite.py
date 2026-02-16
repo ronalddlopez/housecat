@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import datetime, timezone
 
@@ -19,6 +20,7 @@ def create_test_suite(data: dict) -> dict:
         "goal": data["goal"],
         "schedule": data.get("schedule", "*/15 * * * *"),
         "alert_webhook": data.get("alert_webhook") or "",
+        "variables": json.dumps(data.get("variables", [])),
         "status": "active",
         "last_result": "pending",
         "last_run_at": "",
@@ -60,16 +62,26 @@ def list_test_suites() -> list[dict]:
     for test_id in test_ids:
         data = redis.hgetall(f"test:{test_id}")
         if data:
-            tests.append(data)
+            tests.append(_deserialize_variables(data))
 
     tests.sort(key=lambda t: t.get("created_at", ""), reverse=True)
     return tests
 
 
+def _deserialize_variables(data: dict) -> dict:
+    """Parse the JSON-encoded variables field back to a list."""
+    raw = data.get("variables", "[]")
+    try:
+        data["variables"] = json.loads(raw) if isinstance(raw, str) else raw
+    except (json.JSONDecodeError, TypeError):
+        data["variables"] = []
+    return data
+
+
 def get_test_suite(test_id: str) -> dict | None:
     redis = get_redis()
     data = redis.hgetall(f"test:{test_id}")
-    return data if data else None
+    return _deserialize_variables(data) if data else None
 
 
 def update_test_suite(test_id: str, updates: dict) -> dict | None:
@@ -83,6 +95,9 @@ def update_test_suite(test_id: str, updates: dict) -> dict | None:
 
     changes = {k: v for k, v in updates.items() if v is not None}
     changes["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    if "variables" in changes:
+        changes["variables"] = json.dumps(changes["variables"])
 
     if "schedule" in changes and changes["schedule"] != existing.get("schedule"):
         old_schedule_id = existing.get("schedule_id")
@@ -134,7 +149,7 @@ def update_test_suite(test_id: str, updates: dict) -> dict | None:
 
     redis.hset(f"test:{test_id}", values=changes)
 
-    return redis.hgetall(f"test:{test_id}")
+    return _deserialize_variables(redis.hgetall(f"test:{test_id}"))
 
 
 def delete_test_suite(test_id: str) -> bool:

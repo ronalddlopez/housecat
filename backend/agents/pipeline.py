@@ -6,6 +6,7 @@ from agents.evaluator import evaluate_test
 from services.tinyfish import call_tinyfish
 from services.result_store import log_event
 from services.config import get_redis
+from services.variable_resolver import resolve_variables
 
 
 async def run_test(url: str, goal: str, test_id: str | None = None) -> tuple[TestPlan, BrowserResult, TestResult]:
@@ -24,6 +25,19 @@ async def run_test(url: str, goal: str, test_id: str | None = None) -> tuple[Tes
                 log_event(test_id, event_type, message, **kwargs)
             except Exception as e:
                 print(f"[EventLog] Failed to log event: {e}")
+
+    # Resolve variables: planner gets real values, evaluator gets {{placeholders}}
+    original_goal = goal
+    if test_id:
+        try:
+            test_data = get_redis().hgetall(f"test:{test_id}")
+            raw_vars = test_data.get("variables", "[]")
+            variables = json.loads(raw_vars) if isinstance(raw_vars, str) else raw_vars
+            if variables:
+                goal = resolve_variables(goal, variables)
+                print(f"[Pipeline] Resolved {len(variables)} variables in goal")
+        except Exception as e:
+            print(f"[Pipeline] Variable resolution failed: {e}")
 
     try:
         _log("plan_start", f"Planning test for {url}")
@@ -128,7 +142,7 @@ async def run_test(url: str, goal: str, test_id: str | None = None) -> tuple[Tes
         print("[Evaluator] Synthesizing results...")
         final_result = await evaluate_test(
             url=url,
-            goal=goal,
+            goal=original_goal,
             browser_result=browser_result.model_dump(),
             step_results=[sr.model_dump() for sr in step_results],
         )
