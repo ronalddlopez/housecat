@@ -14,11 +14,11 @@ HouseCat lets you monitor any website by describing what to test in natural lang
 
 Three AI agents handle the rest:
 
-1. **Planner Agent** (Claude Haiku 4.5) — Breaks your description into discrete, executable test steps
-2. **Browser Agent** (TinyFish) — Executes each step in a real browser, interacting with the page visually
+1. **Planner Agent** (Claude Haiku 4.5) — Breaks your description into numbered, sequential browser automation steps
+2. **Browser Agent** (TinyFish) — Executes all steps in a single continuous browser session, interacting with the page visually
 3. **Evaluator Agent** (Claude Haiku 4.5) — Compares what happened vs. what was expected and delivers a pass/fail verdict
 
-Tests run on a schedule (cron via QStash), capture before/after screenshots, stream live browser previews, and send failure alerts to webhooks (Slack, Discord, etc.).
+Tests run on a schedule (cron via QStash), stream live execution progress to the UI, and send failure alerts to webhooks (Slack, Discord, etc.).
 
 ## Architecture
 
@@ -40,10 +40,10 @@ Tests run on a schedule (cron via QStash), capture before/after screenshots, str
 │  (pydantic-ai)  (SSE stream)   (pydantic-ai)        │
 └──────────────────────┬──────────────────────────────┘
                        │
-        ┌──────────────┼──────────────┐
-        ▼              ▼              ▼
-   Upstash Redis    QStash       Playwright
-   (state store)  (scheduler)  (screenshots)
+              ┌────────┴────────┐
+              ▼                 ▼
+         Upstash Redis       QStash
+         (state store)     (scheduler)
 ```
 
 ### Agent Pipeline
@@ -52,17 +52,15 @@ Each test run follows this pipeline:
 
 ```
 create_plan(url, goal)
-  → for each step:
-      execute_step(url, step)     # TinyFish browser automation
-      capture_screenshot()         # Playwright screenshot
-  → evaluate_test(goal, results)  # Claude synthesizes verdict
+  → call_tinyfish(url, combined_goal)   # Single continuous browser session
+  → parse per-step results from TinyFish response
+  → evaluate_test(goal, results)        # Claude synthesizes verdict
   → store results in Redis
 ```
 
-- **Planner** uses structured output (`pydantic-ai` → `TestPlan` model) to generate self-contained steps with TinyFish-compatible goals
-- **Browser** calls TinyFish per step via SSE, capturing streaming URLs for live preview and raw JSON results
-- **Evaluator** receives all step results and produces a `TestResult` with per-step breakdown, overall pass/fail, and human-readable details
-- **Screenshots** are captured via Playwright (singleton browser) before the first step and after each step
+- **Planner** uses structured output (`pydantic-ai` → `TestPlan` model) to generate sequential steps that build on each other within a single browser session
+- **Browser** calls TinyFish once via SSE with the combined goal, streaming real-time progress events to the frontend
+- **Evaluator** receives a summarized view of step results and produces a `TestResult` with per-step breakdown, overall pass/fail, and human-readable details
 
 ## Tech Stack
 
@@ -71,8 +69,8 @@ create_plan(url, goal)
 | Frontend | React 18, Vite, TailwindCSS, shadcn/ui, TanStack Query, wouter |
 | Backend | FastAPI, Python 3.11+ |
 | AI Agents | pydantic-ai with Claude Haiku 4.5 (Anthropic) |
-| Browser Automation | TinyFish API (SSE streaming) |
-| Screenshots | Playwright |
+| Browser Automation | TinyFish API (SSE streaming, single continuous session) |
+| Auth | Clerk (free tier, email + password) |
 | State Storage | Upstash Redis (Hash, Sorted Set, Stream, List) |
 | Scheduling | QStash (cron-based callbacks) |
 | Deployment | Replit |
@@ -81,12 +79,12 @@ create_plan(url, goal)
 
 - **Natural language tests** — Describe what to test, not how to test it
 - **Scheduled monitoring** — Cron schedules from every 5 minutes to daily
-- **Live browser preview** — Watch TinyFish browse in real-time via streaming URL
-- **Before/after screenshots** — Visual comparison of page state
-- **Per-step execution** — Each step runs independently with its own TinyFish session
+- **Live execution tracking** — Real-time step-by-step progress with phase indicators and event log
+- **Single-session execution** — All steps run in one continuous TinyFish browser session
 - **Failure alerts** — Webhook notifications (Slack, Discord) on test failures
-- **Rich run details** — Summary, screenshots, raw JSON, and plan tabs per run
+- **Rich run details** — Summary, per-step breakdown, raw JSON, and plan tabs per run
 - **Dashboard** — Site health, attention needed, coverage stats, inline test creation
+- **Authentication** — Clerk-powered sign-in/sign-up with user sync to Redis
 - **SSE live events** — Real-time pipeline progress streamed to the UI
 
 ## Getting Started
@@ -99,6 +97,7 @@ create_plan(url, goal)
 - [QStash](https://upstash.com/docs/qstash) account (for scheduled tests)
 - [Anthropic API key](https://console.anthropic.com/) (Claude Haiku 4.5)
 - [TinyFish API key](https://agent.tinyfish.ai/) (browser automation)
+- [Clerk](https://clerk.com/) account (free tier, for authentication)
 
 ### Environment Variables
 
@@ -108,30 +107,35 @@ Create a `.env` file in the root:
 # Required
 ANTHROPIC_API_KEY=sk-ant-...
 TINYFISH_API_KEY=tf_...
-UPSTASH_REDIS_URL=https://...upstash.io
-UPSTASH_REDIS_TOKEN=AX...
+UPSTASH_REDIS_REST_URL=https://...upstash.io
+UPSTASH_REDIS_REST_TOKEN=AX...
 
 # QStash (for scheduled tests)
 QSTASH_TOKEN=ey...
 QSTASH_CURRENT_SIGNING_KEY=sig_...
 QSTASH_NEXT_SIGNING_KEY=sig_...
+
+# Clerk (authentication)
+CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
+
+# Public URL
 REPLIT_DEV_DOMAIN=your-app.replit.dev  # or PUBLIC_URL for non-Replit deployments
 ```
 
 ### Install & Run
 
 ```bash
-# Backend
-cd backend
-pip install -r requirements.txt  # or: uv sync
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-
-# Frontend (separate terminal)
+# Install dependencies
 npm install
+pip install -r backend/requirements.txt
+
+# Start development (Express + FastAPI + Vite HMR)
 npm run dev
 ```
 
-The app runs on port 5000 (Vite dev server proxies API requests to the backend on port 8000).
+The app runs on port 5000. Express serves the Vite frontend and proxies `/api/*` to the FastAPI backend on port 8000.
 
 ### Quick Test
 
@@ -146,16 +150,16 @@ Once running, navigate to **Run Test** in the sidebar:
 housecat/
 ├── backend/
 │   ├── agents/
-│   │   ├── pipeline.py      # Orchestrator — runs planner → browser → evaluator
+│   │   ├── pipeline.py      # Orchestrator — single TinyFish call, then evaluate
 │   │   ├── planner.py       # Claude Haiku agent → TestPlan structured output
-│   │   ├── browser.py       # TinyFish caller → StepExecution per step
+│   │   ├── browser.py       # TinyFish caller → StepExecution (legacy per-step)
 │   │   └── evaluator.py     # Claude Haiku agent → TestResult verdict
 │   ├── api/
 │   │   ├── tests.py         # CRUD + run endpoints for test suites
-│   │   └── results.py       # Results, timing, uptime, incidents, SSE, dashboard
+│   │   ├── results.py       # Results, timing, uptime, incidents, SSE, dashboard
+│   │   └── auth.py          # Clerk user sync endpoint
 │   ├── services/
-│   │   ├── tinyfish.py       # TinyFish SSE client
-│   │   ├── screenshot.py     # Playwright screenshot capture
+│   │   ├── tinyfish.py       # TinyFish SSE client with streaming URL callback
 │   │   ├── config.py         # Redis, QStash, URL config
 │   │   ├── test_suite.py     # Test suite CRUD (Redis-backed)
 │   │   ├── result_store.py   # Run result storage (Redis sorted sets)
@@ -165,6 +169,7 @@ housecat/
 ├── client/
 │   └── src/
 │       ├── pages/
+│       │   ├── landing.tsx        # Public landing page
 │       │   ├── dashboard.tsx      # Stats cards + inline create form
 │       │   ├── tests.tsx          # Test suite list + CRUD dialogs
 │       │   ├── test-detail.tsx    # Run history + rich run detail panel
@@ -172,10 +177,16 @@ housecat/
 │       │   └── settings.tsx       # Health checks + connection status
 │       ├── components/
 │       │   ├── live-execution-panel.tsx  # Real-time SSE pipeline viewer
-│       │   ├── test-form.tsx             # Shared create/edit form
-│       │   └── app-sidebar.tsx           # Navigation sidebar
+│       │   ├── protected-route.tsx      # Clerk auth guard
+│       │   ├── test-form.tsx            # Shared create/edit form
+│       │   └── app-sidebar.tsx          # Navigation sidebar
+│       ├── hooks/
+│       │   └── use-user-sync.ts   # Sync Clerk user to Redis
 │       └── lib/
 │           └── queryClient.ts     # TanStack Query setup + API helpers
+├── server/
+│   ├── index.ts              # Express 5 entry point (Clerk middleware, spawns FastAPI + Vite)
+│   └── routes.ts             # Auth gate + proxy to FastAPI
 └── pyproject.toml
 ```
 
@@ -184,23 +195,22 @@ housecat/
 ### 1. Planning
 
 The Planner Agent receives your URL + natural language goal and outputs a `TestPlan` with:
-- A combined `tinyfish_goal` (for display)
-- Individual `steps`, each with its own self-contained `tinyfish_goal`
+- A combined `tinyfish_goal` — the actual prompt sent to TinyFish with numbered STEP instructions
+- Individual `steps` — for progress tracking in the UI
 
-Each step's goal is written so TinyFish can execute it in a **fresh browser session** — no state carries over between steps.
+Steps are sequential and build on each other within one continuous browser session.
 
 ### 2. Execution
 
-For each step, the pipeline:
-1. Calls TinyFish via SSE with the step's URL + goal
-2. Streams live browser preview URL to the frontend
-3. Parses the TinyFish result JSON (success, action_performed, verification, error)
-4. Captures a Playwright screenshot of the page after the step
-5. Builds a `StepExecution` record with all raw + parsed data
+The pipeline makes a single TinyFish API call with the combined goal:
+1. TinyFish opens a real browser and executes all steps in sequence
+2. SSE events stream progress to the frontend (planning → browsing → evaluating phases)
+3. The TinyFish result JSON is parsed to build per-step pass/fail data
+4. A `StepExecution` record is created for each step with parsed results
 
 ### 3. Evaluation
 
-The Evaluator Agent receives all step results and the original goal, then produces:
+The Evaluator Agent receives a summarized view of step results and the original goal, then produces:
 - Overall pass/fail
 - Per-step breakdown
 - Human-readable summary (1-3 sentences)
@@ -214,8 +224,9 @@ Results are stored in Upstash Redis:
 - `incidents:{test_id}` — List of failure incidents
 - `events:{test_id}` — Stream for real-time SSE events
 - `test:{test_id}` — Hash with test suite metadata
+- `user:{userId}` — Hash with Clerk user data
 
-The frontend renders rich run details with tabs: Summary, Screenshots, Raw JSON, and Plan.
+The frontend renders rich run details with tabs: Summary, Raw JSON, and Plan.
 
 ## Hackathon Context
 
@@ -226,7 +237,7 @@ Built in 36 hours for the **Online Open Source Agents Hackathon** (February 14-1
 HouseCat isn't a wrapper around a single API call. It's a **multi-agent pipeline** where:
 - Each agent has a specialized role (plan, execute, evaluate)
 - Agents communicate through structured Pydantic models
-- The pipeline orchestrates them with error handling, screenshots, and real-time streaming
+- The pipeline orchestrates them with error handling and real-time streaming
 - The system runs autonomously on a schedule, alerting humans only when something breaks
 
 ## License

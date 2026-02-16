@@ -11,17 +11,17 @@ HouseCat is an AI-powered QA testing agent — "CodeRabbit for QA." Users descri
 ```
 Client (React 18 + Vite + Tailwind + shadcn/ui) [port 5000 via Express]
     ↓ /api/* proxied (120s timeout)
-Express 5 server [port 5000] ← spawns FastAPI + Vite dev server
+Express 5 server [port 5000] ← Clerk middleware, spawns FastAPI + Vite dev server
     ↓
 FastAPI [port 8000] ← Python child process
     ↓
 Upstash Redis (REST API) — all state, no SQL database
 QStash — cron scheduling for test execution
-TinyFish — AI browser automation (SSE streaming)
+TinyFish — AI browser automation (SSE streaming, single continuous session)
 Anthropic Claude — pydantic-ai agents (Haiku 4.5)
 ```
 
-Express on port 5000 is the single entry point. It proxies `/api/*` to FastAPI on 8000 and serves the Vite React app for everything else. Body parsing is skipped for `/api` routes so the proxy forwards raw bodies.
+Express on port 5000 is the single entry point. It proxies `/api/*` to FastAPI on 8000 and serves the Vite React app for everything else. Body parsing is skipped for `/api` routes so the proxy forwards raw bodies. Clerk middleware parses auth sessions; an auth gate before the proxy requires valid sessions for protected endpoints.
 
 ## Commands
 
@@ -47,13 +47,15 @@ npm start
 
 ## Multi-Agent Pipeline
 
-Three pydantic-ai agents run sequentially in `backend/agents/pipeline.py`:
+The pipeline in `backend/agents/pipeline.py` makes a **single TinyFish call** with all steps combined:
 
-1. **Planner** (`planner.py`) — Takes URL + goal → generates TinyFish prompt with numbered STEP instructions and expected JSON output format. Output: `TestPlan`
-2. **Browser** (`browser.py`) — Calls TinyFish API with the prompt via `@agent.tool`, parses per-step results. Output: `BrowserResult`
-3. **Evaluator** (`evaluator.py`) — Compares requested goal vs actual results → pass/fail verdict with detailed assessment. Output: `TestResult`
+1. **Planner** (`planner.py`) — Takes URL + goal → generates a combined `tinyfish_goal` with numbered STEP instructions. Steps are sequential and build on each other within one session. Output: `TestPlan`
+2. **TinyFish** (`services/tinyfish.py`) — Single API call executes all steps in one continuous browser session. Streams SSE events including `STREAMING_URL`, `STEP`, `COMPLETE`, `ERROR`. An `on_streaming_url` callback fires immediately when the URL arrives.
+3. **Evaluator** (`evaluator.py`) — Receives a summarized view of results (via `_summarize_browser_result` to avoid token limits) → pass/fail verdict with detailed assessment. Output: `TestResult`
 
 All agents use `claude-haiku-4-5-20251001` with `UsageLimits(request_limit=N)` to cap API calls.
+
+Note: `browser.py` contains legacy per-step execution functions but the pipeline now calls `call_tinyfish()` directly.
 
 ## Redis Data Model (No SQL)
 
@@ -64,6 +66,8 @@ results:{id}     → Sorted Set (test results by timestamp)
 timing:{id}      → Sorted Set (response times)
 events:{id}      → Stream (execution event log)
 incidents:{id}   → List (failure incidents)
+user:{userId}    → Hash (Clerk user data synced on login)
+users:all        → Set (index of all user IDs)
 ```
 
 ## QStash Scheduling
@@ -72,11 +76,13 @@ Test suites have cron expressions (default `*/15 * * * *`). QStash calls `POST /
 
 ## TinyFish Integration
 
-`backend/services/tinyfish.py` streams SSE from TinyFish's API. Event types: `STREAMING_URL`, `STEP`, `COMPLETE`, `ERROR`. The COMPLETE event contains the JSON result from browser automation.
+`backend/services/tinyfish.py` streams SSE from TinyFish's API. Event types: `STREAMING_URL`, `STEP`, `COMPLETE`, `ERROR`. The COMPLETE event contains the JSON result from browser automation. The pipeline sends one combined goal and parses the result into per-step data.
 
-## Screenshots
+**Important**: TinyFish's streaming URL does NOT support iframe embedding (cross-origin restrictions). Do not attempt to embed it in iframes.
 
-`backend/services/screenshot.py` uses a Playwright singleton browser to capture before/after screenshots for each test step. Playwright must be installed (`playwright install chromium`).
+## Authentication
+
+Clerk free tier handles auth. Express middleware (`@clerk/express`) parses sessions. The auth gate in `server/routes.ts` allows public endpoints (`/api/health`, `/api/callback/*`, `/api/auth/*`) and requires valid Clerk sessions for everything else, forwarding `X-Clerk-User-Id` to FastAPI. Frontend uses `@clerk/clerk-react` with `ClerkProvider` in `main.tsx`.
 
 ## API Endpoints
 
@@ -93,11 +99,13 @@ Test suites have cron expressions (default `*/15 * * * *`). QStash calls `POST /
 | `GET /api/tests/{id}/timing` | Timing data (paginated) |
 | `GET /api/tests/{id}/uptime` | Uptime metrics over time window |
 | `GET /api/dashboard` | Aggregated dashboard stats |
+| `POST /api/auth/sync-user` | Sync Clerk user data to Redis |
 | `POST /api/test/{tinyfish,agent,qstash}` | Sanity checks |
 
 ## Frontend
 
-- **Router**: Wouter (not React Router). Routes: `/` (dashboard), `/tests`, `/run`, `/settings`
+- **Router**: Wouter (not React Router). Routes: `/` (landing), `/dashboard`, `/tests`, `/tests/:id`, `/run`, `/settings`
+- **Auth**: Clerk. `/` is public landing page; all other routes require sign-in via `ProtectedRoute`
 - **State**: TanStack Query. Dashboard polls `/api/tests` every 30s
 - **UI**: shadcn/ui with custom `hover-elevate` and `active-elevate-2` utilities on Button/Select/AlertDialog. Do NOT run `npx shadcn@latest add --overwrite` — it will replace custom utilities
 - **Path aliases**: `@/*` → `client/src/*`, `@shared/*` → `shared/*` (configured in tsconfig.json and vite.config.ts)
@@ -113,6 +121,7 @@ UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
 QSTASH_TOKEN, QSTASH_CURRENT_SIGNING_KEY, QSTASH_NEXT_SIGNING_KEY
 TINYFISH_API_KEY
 ANTHROPIC_API_KEY
+CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY, VITE_CLERK_PUBLISHABLE_KEY
 REPLIT_DEV_DOMAIN (optional, for Replit public URL)
 PUBLIC_URL (fallback: http://localhost:5000)
 ```
@@ -121,3 +130,4 @@ PUBLIC_URL (fallback: http://localhost:5000)
 
 - No unit/integration test suite exists yet. There is no test runner configured.
 - Express auto-restarts the FastAPI child process if it crashes (2s delay).
+- TinyFish streaming URLs cannot be embedded in iframes (cross-origin restriction). The app uses live execution tracking (phase indicators + step tracker + event log) instead.

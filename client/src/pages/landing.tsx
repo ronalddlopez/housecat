@@ -133,8 +133,8 @@ export default function LandingPage() {
                 <div>
                   <h3 className="font-semibold text-lg">2. Browser Agent</h3>
                   <p className="text-sm text-muted-foreground mt-1">
-                    TinyFish executes each step in a real browser, streaming a
-                    live preview and collecting evidence.
+                    TinyFish executes all steps in a single continuous browser
+                    session, interacting with pages visually.
                   </p>
                 </div>
               </CardContent>
@@ -232,7 +232,6 @@ export default function LandingPage() {
               "TinyFish",
               "Upstash Redis",
               "QStash",
-              "Playwright",
               "pydantic-ai",
             ].map((tech) => (
               <span
