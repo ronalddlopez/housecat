@@ -37,7 +37,6 @@ def _summarize_browser_result(browser_result: dict) -> dict:
     """Extract only the fields the evaluator needs, dropping large raw data."""
     summary = {
         "success": browser_result.get("success"),
-        "streaming_url": browser_result.get("streaming_url"),
     }
 
     step_executions = browser_result.get("step_executions", [])

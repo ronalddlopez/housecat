@@ -97,7 +97,6 @@ async def execute_step(
         tinyfish_raw=tinyfish_raw if isinstance(tinyfish_raw, str) else json.dumps(tinyfish_raw) if tinyfish_raw else None,
         tinyfish_data=tinyfish_data,
         streaming_url=tinyfish_result.get("streaming_url"),
-        screenshot=None,
         passed=passed,
         details=details,
         error=error,

@@ -27,8 +27,7 @@ class StepExecution(BaseModel):
     tinyfish_goal: str = Field(description="The single-step goal sent to TinyFish")
     tinyfish_raw: str | None = Field(default=None, description="Raw JSON string from TinyFish for this step")
     tinyfish_data: dict | None = Field(default=None, description="Parsed TinyFish result for this step")
-    streaming_url: str | None = Field(default=None, description="TinyFish live browser preview URL for this step")
-    screenshot: dict | None = Field(default=None, description="Screenshot captured after this step")
+    streaming_url: str | None = Field(default=None, description="TinyFish streaming URL for this step")
     passed: bool = False
     details: str = ""
     error: str | None = None

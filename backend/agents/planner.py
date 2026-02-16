@@ -25,7 +25,7 @@ RULES FOR THE COMBINED tinyfish_goal:
 - Steps should be sequential: navigate, interact, then verify
 - Be specific about actions: "Click the Login button", not "log in"
 - For form fields, specify the value: "Enter 'test@example.com' in the email field"
-- TinyFish sees the page visually (screenshots) — reference visible text and labels, NOT CSS selectors or XPaths
+- TinyFish sees the page visually — reference visible text and labels, NOT CSS selectors or XPaths
 - Include the full JSON output format at the end
 
 RULES FOR EACH STEP IN THE steps LIST:
