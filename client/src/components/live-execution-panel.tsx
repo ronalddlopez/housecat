@@ -7,7 +7,6 @@ import {
   XCircle,
   Loader2,
   Circle,
-  ExternalLink,
   Sparkles,
   Globe,
   Brain,
@@ -150,7 +149,6 @@ export function LiveExecutionPanel({ testId, runTrigger, onComplete }: LiveExecu
   const [phase, setPhase] = useState<Phase>("idle");
   const [steps, setSteps] = useState<StepStatus[]>([]);
   const [events, setEvents] = useState<EventEntry[]>([]);
-  const [streamingUrl, setStreamingUrl] = useState<string | null>(null);
   const [finalResult, setFinalResult] = useState<boolean | null>(null);
   const [visible, setVisible] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
@@ -170,7 +168,6 @@ export function LiveExecutionPanel({ testId, runTrigger, onComplete }: LiveExecu
     setPhase("idle");
     setSteps([]);
     setEvents([]);
-    setStreamingUrl(null);
     setFinalResult(null);
     setVisible(true);
 
@@ -208,9 +205,6 @@ export function LiveExecutionPanel({ testId, runTrigger, onComplete }: LiveExecu
               }
               break;
             }
-            case "browser_preview":
-              if (data.streaming_url) setStreamingUrl(data.streaming_url);
-              break;
             case "step_complete": {
               const stepNum = parseInt(data.step_number, 10);
               const passed = data.passed === "true" || data.passed === "True";
@@ -244,7 +238,7 @@ export function LiveExecutionPanel({ testId, runTrigger, onComplete }: LiveExecu
               es.close();
               eventSourceRef.current = null;
               onComplete?.();
-              hideTimerRef.current = setTimeout(() => setVisible(false), 8000);
+              hideTimerRef.current = setTimeout(() => setVisible(false), 30000);
               break;
             }
             case "error":
@@ -252,7 +246,7 @@ export function LiveExecutionPanel({ testId, runTrigger, onComplete }: LiveExecu
               es.close();
               eventSourceRef.current = null;
               onComplete?.();
-              hideTimerRef.current = setTimeout(() => setVisible(false), 8000);
+              hideTimerRef.current = setTimeout(() => setVisible(false), 30000);
               break;
           }
         } catch {}
@@ -346,44 +340,12 @@ export function LiveExecutionPanel({ testId, runTrigger, onComplete }: LiveExecu
 
               {phase !== "idle" && <PhaseIndicator current={phase} />}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-3">
-                  {streamingUrl && (
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">Browser Preview</p>
-                      <div className="rounded-md border aspect-video bg-muted flex items-center justify-center">
-                        <div className="text-center space-y-3">
-                          <Globe className="h-8 w-8 mx-auto text-emerald-500" />
-                          <p className="text-sm font-medium">TinyFish is browsing...</p>
-                          <p className="text-xs text-muted-foreground">Watch the live browser session</p>
-                          <Button size="sm" variant="default" asChild>
-                            <a href={streamingUrl} target="_blank" rel="noopener noreferrer" data-testid="link-preview">
-                              <ExternalLink className="h-3.5 w-3.5" />
-                              Open Live Preview
-                            </a>
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {!streamingUrl && phase === "browsing" && (
-                    <div className="rounded-md border aspect-video bg-muted flex items-center justify-center">
-                      <div className="text-center space-y-2">
-                        <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
-                        <p className="text-xs text-muted-foreground">Waiting for browser preview...</p>
-                      </div>
-                    </div>
-                  )}
+              {steps.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">Steps</p>
+                  <StepTracker steps={steps} />
                 </div>
-
-                {steps.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">Steps</p>
-                    <StepTracker steps={steps} />
-                  </div>
-                )}
-              </div>
+              )}
 
               {events.length > 0 && (
                 <div className="space-y-2">

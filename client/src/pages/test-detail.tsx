@@ -32,7 +32,6 @@ import {
   Bell,
   ChevronDown,
   Copy,
-  ExternalLink,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { LiveExecutionPanel } from "@/components/live-execution-panel";
@@ -69,22 +68,12 @@ interface Plan {
   total_steps: number;
 }
 
-interface Screenshot {
-  step_number: number;
-  label?: string;
-  url: string;
-  image_base64: string;
-  captured_at: string;
-}
-
 interface StepExecution {
   step_number: number;
   description: string;
   tinyfish_goal: string;
   tinyfish_raw: string | null;
   tinyfish_data: any | null;
-  streaming_url: string | null;
-  screenshot: Screenshot | null;
   passed: boolean;
   details: string;
   error: string | null;
@@ -106,9 +95,7 @@ interface RunResult {
   plan?: Plan;
   tinyfish_raw?: string;
   tinyfish_data?: any;
-  streaming_url?: string;
   step_executions?: StepExecution[];
-  screenshots?: Screenshot[];
 }
 
 interface TimingPoint {
@@ -210,7 +197,6 @@ function RunDetailPanel({ run }: { run: RunResult }) {
       <Tabs defaultValue="summary">
         <TabsList>
           <TabsTrigger value="summary" data-testid="tab-summary">Summary</TabsTrigger>
-          <TabsTrigger value="screenshots" data-testid="tab-screenshots">Screenshots</TabsTrigger>
           <TabsTrigger value="raw-json" data-testid="tab-raw-json">Raw JSON</TabsTrigger>
           <TabsTrigger value="plan" data-testid="tab-plan">Plan</TabsTrigger>
         </TabsList>
@@ -253,41 +239,6 @@ function RunDetailPanel({ run }: { run: RunResult }) {
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">No step data available.</p>
-          )}
-          {run.streaming_url && (
-            <Button variant="outline" asChild data-testid="button-view-tinyfish">
-              <a href={run.streaming_url} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="h-4 w-4" />
-                View in TinyFish
-              </a>
-            </Button>
-          )}
-        </TabsContent>
-
-        <TabsContent value="screenshots" className="mt-4">
-          {run.screenshots && run.screenshots.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {run.screenshots.map((ss, idx) => (
-                <div key={idx} className="space-y-1.5">
-                  <img
-                    src={`data:image/jpeg;base64,${ss.image_base64}`}
-                    alt={ss.label || `Step ${ss.step_number} screenshot`}
-                    className="rounded-md w-full"
-                    data-testid={`img-screenshot-${ss.step_number}`}
-                  />
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="text-xs font-medium">
-                      {ss.label || `Step ${ss.step_number}`}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {format(new Date(ss.captured_at), "MMM d, HH:mm:ss")}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No screenshots captured for this run.</p>
           )}
         </TabsContent>
 

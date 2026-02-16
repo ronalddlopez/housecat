@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pydantic_ai import Agent, RunContext, UsageLimits
 from models import BrowserResult, StepResult, StepExecution
 from services.tinyfish import call_tinyfish
+from typing import Callable, Awaitable
 
 
 @dataclass
@@ -54,9 +55,15 @@ async def execute_test(url: str, tinyfish_goal: str) -> BrowserResult:
     return result.output
 
 
-async def execute_step(url: str, step_number: int, description: str, tinyfish_goal: str) -> StepExecution:
+async def execute_step(
+    url: str,
+    step_number: int,
+    description: str,
+    tinyfish_goal: str,
+    on_streaming_url: Callable[[str], Awaitable[None]] | None = None,
+) -> StepExecution:
     """Execute a single step via TinyFish and return a StepExecution with raw data."""
-    tinyfish_result = await call_tinyfish(url, tinyfish_goal)
+    tinyfish_result = await call_tinyfish(url, tinyfish_goal, on_streaming_url=on_streaming_url)
 
     tinyfish_data = None
     tinyfish_raw = tinyfish_result.get("raw")
@@ -71,7 +78,8 @@ async def execute_step(url: str, step_number: int, description: str, tinyfish_go
     error = tinyfish_result.get("error")
 
     if tinyfish_data:
-        details = tinyfish_data.get("verification", "") or tinyfish_data.get("action_performed", "") or tinyfish_data.get("message", "")
+        raw_details = tinyfish_data.get("verification", "") or tinyfish_data.get("action_performed", "") or tinyfish_data.get("message", "")
+        details = ", ".join(raw_details) if isinstance(raw_details, list) else str(raw_details) if raw_details else ""
         if tinyfish_data.get("success") is False:
             passed = False
         elif tinyfish_data.get("success") is True:

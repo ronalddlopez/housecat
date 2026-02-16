@@ -33,17 +33,48 @@ ERROR FIELD:
 )
 
 
+def _summarize_browser_result(browser_result: dict) -> dict:
+    """Extract only the fields the evaluator needs, dropping large raw data."""
+    summary = {
+        "success": browser_result.get("success"),
+        "streaming_url": browser_result.get("streaming_url"),
+    }
+
+    step_executions = browser_result.get("step_executions", [])
+    summarized_steps = []
+    for se in step_executions:
+        step = {
+            "step_number": se.get("step_number"),
+            "description": se.get("description"),
+            "passed": se.get("passed"),
+            "details": se.get("details"),
+            "error": se.get("error"),
+        }
+        # Include parsed tinyfish_data but skip raw strings
+        if se.get("tinyfish_data") and isinstance(se["tinyfish_data"], dict):
+            trimmed = {k: v for k, v in se["tinyfish_data"].items()
+                       if k in ("success", "verification", "action_performed", "message", "error")}
+            if trimmed:
+                step["tinyfish_data"] = trimmed
+        summarized_steps.append(step)
+
+    summary["step_executions"] = summarized_steps
+    return summary
+
+
 async def evaluate_test(
     url: str,
     goal: str,
     browser_result: dict,
     step_results: list[dict],
 ) -> TestResult:
+    summarized = _summarize_browser_result(browser_result)
+
     prompt = f"""Test URL: {url}
 Test Goal: {goal}
 
 Browser Execution Result:
-{json.dumps(browser_result, indent=2)}
+{json.dumps(summarized, indent=2)}
 
 Step Results:
 {json.dumps(step_results, indent=2)}

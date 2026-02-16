@@ -194,10 +194,10 @@ export default function LandingPage() {
               <CardContent className="p-6 flex gap-4">
                 <Shield className="h-6 w-6 text-primary shrink-0 mt-0.5" />
                 <div>
-                  <h3 className="font-semibold">Live Browser Preview</h3>
+                  <h3 className="font-semibold">Live Execution Tracking</h3>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Watch TinyFish browse in real-time via streaming URL, with
-                    before/after screenshots for every step.
+                    Watch test execution in real-time with step-by-step progress,
+                    phase indicators, and a live event log.
                   </p>
                 </div>
               </CardContent>

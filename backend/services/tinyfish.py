@@ -1,11 +1,17 @@
 import os
 import json
 import httpx
+from typing import Callable, Awaitable
 
 TINYFISH_URL = "https://agent.tinyfish.ai/v1/automation/run-sse"
 
 
-async def call_tinyfish(url: str, goal: str, timeout: float = 120.0) -> dict:
+async def call_tinyfish(
+    url: str,
+    goal: str,
+    timeout: float = 120.0,
+    on_streaming_url: Callable[[str], Awaitable[None]] | None = None,
+) -> dict:
     tinyfish_key = os.environ.get("TINYFISH_API_KEY", "")
     steps_observed = []
 
@@ -48,6 +54,11 @@ async def call_tinyfish(url: str, goal: str, timeout: float = 120.0) -> dict:
 
                 if event_type == "STREAMING_URL":
                     streaming_url = data.get("streamingUrl")
+                    if streaming_url and on_streaming_url:
+                        try:
+                            await on_streaming_url(streaming_url)
+                        except Exception as e:
+                            print(f"[TinyFish] on_streaming_url callback error: {e}")
                 elif event_type == "STEP":
                     steps_observed.append({
                         "message": data.get("message", ""),

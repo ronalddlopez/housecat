@@ -2,14 +2,13 @@ import json
 import time
 from models import TestPlan, BrowserResult, StepResult, StepExecution, TestResult
 from agents.planner import create_plan
-from agents.browser import execute_step
 from agents.evaluator import evaluate_test
+from services.tinyfish import call_tinyfish
 from services.result_store import log_event
 from services.config import get_redis
-from services.screenshot import capture_before_after
 
 
-async def run_test(url: str, goal: str, test_id: str | None = None) -> tuple[TestPlan, BrowserResult, TestResult, list]:
+async def run_test(url: str, goal: str, test_id: str | None = None) -> tuple[TestPlan, BrowserResult, TestResult]:
     start = time.time()
 
     if test_id:
@@ -34,98 +33,95 @@ async def run_test(url: str, goal: str, test_id: str | None = None) -> tuple[Tes
         steps_json = json.dumps([{"step_number": s.step_number, "description": s.description} for s in plan.steps])
         _log("plan_complete", f"Plan created: {plan.total_steps} steps", steps=steps_json)
 
-        screenshots = []
-        try:
-            before_ss = await capture_before_after(url, plan.total_steps, phase="before")
-            if before_ss:
-                screenshots.append(before_ss)
-                _log("screenshot_captured", "Captured initial page state screenshot")
-        except Exception:
-            pass
-
+        # Execute ALL steps in a single continuous TinyFish session
         _log("browser_start", "Executing test with TinyFish")
-        print(f"[Browser] Executing {plan.total_steps} steps individually...")
+        print(f"[Browser] Executing all {plan.total_steps} steps in one session...")
 
+        async def _on_streaming_url(streaming_url: str):
+            _log("browser_preview", "Live browser preview available", streaming_url=streaming_url)
+
+        tinyfish_result = await call_tinyfish(
+            url=url,
+            goal=plan.tinyfish_goal,
+            on_streaming_url=_on_streaming_url,
+        )
+
+        streaming_url = tinyfish_result.get("streaming_url")
+
+        # Parse the combined result and build per-step data
+        tinyfish_data = None
+        tinyfish_raw = tinyfish_result.get("raw")
+        if tinyfish_raw:
+            try:
+                tinyfish_data = json.loads(tinyfish_raw) if isinstance(tinyfish_raw, str) else tinyfish_raw
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        overall_success = tinyfish_result.get("success", False)
+        error = tinyfish_result.get("error")
+
+        # Build step results from the plan steps + TinyFish result
         step_executions: list[StepExecution] = []
         step_results: list[StepResult] = []
 
+        # Try to extract per-step results from TinyFish data
+        per_step_data = {}
+        if tinyfish_data:
+            # TinyFish may return step_results or similar per-step breakdown
+            if isinstance(tinyfish_data, dict):
+                for key in ("step_results", "steps", "results"):
+                    if isinstance(tinyfish_data.get(key), list):
+                        for i, item in enumerate(tinyfish_data[key]):
+                            per_step_data[i + 1] = item
+                        break
+
         for step in plan.steps:
             step_num = step.step_number
-            _log("step_start", f"Step {step_num}: {step.description}", step_number=step_num)
-            print(f"[Browser] Step {step_num}/{plan.total_steps}: {step.description}")
+            step_data = per_step_data.get(step_num)
 
-            try:
-                execution = await execute_step(
-                    url=url,
-                    step_number=step_num,
-                    description=step.description,
-                    tinyfish_goal=step.tinyfish_goal,
-                )
+            if step_data and isinstance(step_data, dict):
+                passed = step_data.get("success", overall_success)
+                raw_details = step_data.get("verification", "") or step_data.get("action_performed", "") or step_data.get("message", "")
+                details = ", ".join(raw_details) if isinstance(raw_details, list) else str(raw_details) if raw_details else ""
+            elif error:
+                passed = False
+                details = error
+            else:
+                passed = overall_success
+                details = "Step executed as part of combined run"
 
-                if execution.streaming_url:
-                    _log("browser_preview", f"Step {step_num} preview available", streaming_url=execution.streaming_url)
+            execution = StepExecution(
+                step_number=step_num,
+                description=step.description,
+                tinyfish_goal=step.tinyfish_goal,
+                tinyfish_raw=tinyfish_raw if isinstance(tinyfish_raw, str) else json.dumps(tinyfish_raw) if tinyfish_raw else None,
+                tinyfish_data=step_data if step_data else tinyfish_data,
+                streaming_url=streaming_url,
+                passed=passed,
+                details=details,
+                error=error if not passed else None,
+            )
+            step_executions.append(execution)
 
-                try:
-                    ss = await capture_before_after(url, plan.total_steps, phase="after")
-                    if ss:
-                        ss["step_number"] = step_num
-                        ss["label"] = f"After step {step_num} — page baseline"
-                        execution.screenshot = ss
-                        screenshots.append(ss)
-                        _log("screenshot_captured", f"Screenshot captured for step {step_num}")
-                except Exception:
-                    pass
+            sr = StepResult(
+                step_number=step_num,
+                passed=passed,
+                details=details,
+            )
+            step_results.append(sr)
 
-                step_executions.append(execution)
-
-                sr = StepResult(
-                    step_number=step_num,
-                    passed=execution.passed,
-                    details=execution.details,
-                )
-                step_results.append(sr)
-
-                status = "+" if execution.passed else "x"
-                print(f"[Browser] Step {step_num}: {status} {execution.details[:80]}")
-                _log("step_complete", f"Step {step_num}: {'passed' if execution.passed else 'failed'} — {execution.details[:120]}", step_number=step_num, passed=execution.passed)
-
-            except Exception as e:
-                error_msg = f"Step {step_num} execution error: {str(e)[:200]}"
-                print(f"[Browser] {error_msg}")
-                _log("step_complete", error_msg, step_number=step_num, passed=False)
-
-                failed_exec = StepExecution(
-                    step_number=step_num,
-                    description=step.description,
-                    tinyfish_goal=step.tinyfish_goal,
-                    passed=False,
-                    details=error_msg,
-                    error=str(e)[:200],
-                )
-                step_executions.append(failed_exec)
-                step_results.append(StepResult(
-                    step_number=step_num,
-                    passed=False,
-                    details=error_msg,
-                ))
+            status_char = "+" if passed else "x"
+            print(f"[Browser] Step {step_num}: {status_char} {details[:80]}")
+            _log("step_complete", f"Step {step_num}: {'passed' if passed else 'failed'} — {details[:120]}", step_number=step_num, passed=passed)
 
         _log("browser_complete", f"Browser execution finished: {len(step_executions)} steps")
 
-        combined_raw = json.dumps([
-            {"step": se.step_number, "raw": se.tinyfish_raw, "data": se.tinyfish_data}
-            for se in step_executions
-        ])
-        last_streaming_url = next(
-            (se.streaming_url for se in reversed(step_executions) if se.streaming_url),
-            None,
-        )
-
         browser_result = BrowserResult(
-            success=all(se.passed for se in step_executions),
+            success=overall_success,
             step_results=step_results,
             step_executions=[se.model_dump() for se in step_executions] if step_executions else [],
-            raw_result=combined_raw,
-            streaming_url=last_streaming_url,
+            raw_result=tinyfish_raw if isinstance(tinyfish_raw, str) else json.dumps(tinyfish_raw) if tinyfish_raw else None,
+            streaming_url=streaming_url,
         )
 
         _log("eval_start", "Evaluating results")
@@ -144,7 +140,7 @@ async def run_test(url: str, goal: str, test_id: str | None = None) -> tuple[Tes
         print(f"[Result] {final_result.details}")
         _log("eval_complete", f"Test {status} — {final_result.steps_passed}/{final_result.steps_total} steps", passed=final_result.passed)
 
-        return plan, browser_result, final_result, screenshots
+        return plan, browser_result, final_result
 
     except Exception as e:
         _log("error", f"Pipeline error: {str(e)}")

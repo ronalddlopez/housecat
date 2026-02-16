@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from services.config import get_redis
 
 
-def store_run_result(test_id: str, final_result, plan, browser_result, triggered_by: str = "manual", screenshots: list | None = None) -> dict:
+def store_run_result(test_id: str, final_result, plan, browser_result, triggered_by: str = "manual") -> dict:
     redis = get_redis()
     now = datetime.now(timezone.utc)
     run_id = str(uuid.uuid4())[:8]
@@ -45,7 +45,6 @@ def store_run_result(test_id: str, final_result, plan, browser_result, triggered
         "tinyfish_data": tinyfish_data,
         "streaming_url": browser_result.streaming_url,
         "step_executions": step_executions if isinstance(step_executions, list) else [],
-        "screenshots": screenshots or [],
     }
 
     timestamp = now.timestamp()
@@ -80,5 +79,5 @@ def log_event(test_id: str, event_type: str, message: str, **extra_fields):
         "message": message,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-    fields.update({k: str(v) for k, v in extra_fields.items()})
+    fields.update({k: str(v) for k, v in extra_fields.items() if v is not None})
     redis.xadd(f"events:{test_id}", "*", data=fields)

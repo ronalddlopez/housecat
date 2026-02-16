@@ -20,10 +20,6 @@ app.include_router(results_router)
 app.include_router(auth_router)
 
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    from services.screenshot import cleanup_browser
-    await cleanup_browser()
 
 app.add_middleware(
     CORSMiddleware,
@@ -105,7 +101,7 @@ async def qstash_callback(test_id: str, request: Request):
         return {"status": "skipped", "reason": "test is paused"}
 
     try:
-        plan, browser_result, final_result, screenshots = await run_test(
+        plan, browser_result, final_result = await run_test(
             url=test["url"],
             goal=test["goal"],
             test_id=test_id,
@@ -117,7 +113,6 @@ async def qstash_callback(test_id: str, request: Request):
             plan=plan,
             browser_result=browser_result,
             triggered_by="qstash",
-            screenshots=screenshots,
         )
 
         if not final_result.passed and test.get("alert_webhook"):
@@ -169,7 +164,7 @@ async def run_test_manual(request: Request):
         return JSONResponse(content={"error": "Both 'url' and 'goal' are required"}, status_code=400)
 
     try:
-        plan, browser_result, final_result, _screenshots = await run_test(url, goal)
+        plan, browser_result, final_result = await run_test(url, goal)
 
         return {
             "plan": plan.model_dump(),

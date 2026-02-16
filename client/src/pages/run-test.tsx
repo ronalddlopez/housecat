@@ -10,7 +10,6 @@ import {
   XCircle,
   FlaskConical,
   Clock,
-  ExternalLink,
   ChevronDown,
   ChevronUp,
   Loader2,
@@ -144,18 +143,6 @@ export default function RunTestPage() {
                         {(result.result.duration_ms / 1000).toFixed(1)}s
                       </span>
                     </div>
-                  )}
-                  {result.browser_result?.streaming_url && (
-                    <a
-                      href={result.browser_result.streaming_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400 hover:underline"
-                      data-testid="link-browser-preview"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      Browser Preview
-                    </a>
                   )}
                 </div>
               </div>
