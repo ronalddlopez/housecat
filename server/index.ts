@@ -1,5 +1,7 @@
+import "dotenv/config";
 import path from "path";
 import express, { type Request, Response, NextFunction } from "express";
+import { clerkMiddleware } from "@clerk/express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -31,6 +33,8 @@ app.use((req, res, next) => {
   }
   express.urlencoded({ extended: false })(req, res, next);
 });
+
+app.use(clerkMiddleware());
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

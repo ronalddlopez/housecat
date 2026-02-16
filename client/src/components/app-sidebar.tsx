@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/sidebar";
 
 const navItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
+  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Tests", url: "/tests", icon: FlaskConical },
   { title: "Run Test", url: "/run", icon: Play },
   { title: "Settings", url: "/settings", icon: Settings },

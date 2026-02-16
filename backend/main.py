@@ -11,11 +11,13 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from api.tests import router as tests_router
 from api.results import router as results_router
+from api.auth import router as auth_router
 from services.config import get_redis, get_qstash, get_public_url
 
 app = FastAPI(title="HouseCat", version="0.1.0")
 app.include_router(tests_router)
 app.include_router(results_router)
+app.include_router(auth_router)
 
 
 @app.on_event("shutdown")
